@@ -1,0 +1,35 @@
+#ifndef _UTIL_H
+#define _UTIL_H
+#include <stdint.h>
+#include <stddef.h>
+#include <stdbool.h>
+
+/*
+ * Convert bytes to a hex string
+ * out needs to be at least (bytes_len * 2 + 1) bytes
+ */
+void util_byte2hex(const uint8_t* bytes, size_t bytes_len,
+        bool uppercase, char* out);
+
+/*
+ * Return the user's home directory
+ */
+const char *util_get_home();
+
+/*
+ * Return the filename part of the path
+ * This will return a pointer in fullpath
+ * !! ONLY WORKS FOR FILES !!
+ */
+char *util_basename(const char *fullpath);
+
+/*
+ * Calculate the difference between 2 timespec structs in miliseconds
+ *
+ * future cannot be more in the past than past
+ * if that makes any sense
+ */
+uint64_t util_timespec_diff(const struct timespec *past,
+        const struct timespec *future);
+
+#endif /* _UTIL_H */

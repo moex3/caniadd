@@ -1,0 +1,10 @@
+[submodule "subm/tiny-AES-c"]
+	path = subm/tiny-AES-c
+	url = https://github.com/kokke/tiny-AES-c
+[submodule "subm/md5-c"]
+	path = subm/md5-c
+	url = https://github.com/Zunawe/md5-c
+[submodule "subm/MD4"]
+	path = subm/MD4
+	url = https://github.com/moex3/MD4
+	branch = ptr_addition_fix
