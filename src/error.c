@@ -6,7 +6,7 @@ static const char *error_string[] = {
 
 const char *error_to_string(enum error err)
 {
-    if (err >= _ERR_COUNT)
+    if (err >= _ERR_COUNT || err < 0)
         return "ERR_UNKNOWN";
     return error_string[err];
 }
