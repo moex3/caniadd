@@ -9,6 +9,9 @@ That will be the peak *comfy* animu list management experience.
 
 # Install
 
+You'll need to download the developement package for sqlite3.
+Caniadd also needs pthreads, but that's probably already there.
+
 ```bash
 git clone --recurse-submodules https://git.lain.church/x3/caniadd
 cd caniadd
