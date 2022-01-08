@@ -7,6 +7,15 @@ That is, it implements logging in, encryption, ed2k hashing and adding files, ba
 In the future I want to write an mpv plugin that will use the cached database from caniadd to automatically mark an episode watched on AniDB.
 That will be the peak *comfy* animu list management experience.
 
+# Install
+
+```bash
+git clone --recurse-submodules https://git.lain.church/x3/caniadd
+cd caniadd
+make
+./caniadd -h
+```
+
 ## Things to do:
 - NAT handling
 - Multi thread hashing
