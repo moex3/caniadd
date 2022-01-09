@@ -5,6 +5,8 @@
 
 #include "error.h"
 
+#define API_VERSION "3"
+
 /* Maximum length of one response/request */
 #define API_BUFSIZE 1400
 /* Session key maximum size, including '\0' */

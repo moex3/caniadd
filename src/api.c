@@ -602,8 +602,9 @@ static enum error api_cmd_auth(const char *uname, const char *pass,
     char buffer[API_BUFSIZE];
     long code;
     size_t res_len = api_send(buffer, snprintf(buffer, sizeof(buffer),
-                "AUTH user=%s&pass=%B&protover=3&client=caniadd&clientver="
-                PROG_VERSION "&enc=UTF-8", uname, pass), sizeof(buffer));
+                "AUTH user=%s&pass=%B&protover=" API_VERSION "&client=caniadd&"
+                "clientver=" PROG_VERSION "&enc=UTF-8", uname, pass),
+            sizeof(buffer));
     enum error err = NOERR;
 
     if (res_len == -1) {
