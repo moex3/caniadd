@@ -34,7 +34,6 @@ make
 - Make deleting from mylist possible, with
   - Name regexes,
   - If file is not found at a scan
-- Use api\_cmd style in api\_encrypt\_init
 - Buffer up mylistadd api cmds when waiting for ratelimit
 - Handle C-c gracefully at any time
 - Write -h page, and maybe a man page too

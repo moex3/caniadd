@@ -44,6 +44,7 @@
 static enum error api_cmd_logout(struct api_result *res);
 static enum error api_cmd_auth(const char *uname, const char *pass,
         struct api_result *res);
+static enum error api_cmd_encrypt(const char *uname, struct api_result *res);
 
 static bool api_authed = false;
 static char api_session[API_SMAXSIZE] = {0}; /* No escaping is needed */
@@ -94,41 +95,44 @@ static int api_escaped_sring_info(const struct printf_info *info, size_t n,
 
 static enum error api_init_encrypt(const char *api_key, const char *uname)
 {
-    char buffer[API_BUFSIZE];
     MD5Context md5_ctx;
-    char *salt_start = buffer + 4 /* 209 [salt here] ... */, *salt_end;
-    ssize_t r_len, salt_len;
+    struct api_result res;
+    enum error err;
+    size_t salt_len;
 
-    if (net_send(buffer, snprintf(buffer, sizeof(buffer),
-                "ENCRYPT user=%s&type=1", uname)) == -1) {
-        return ERR_API_COMMFAIL;
-    }
-    r_len = net_read(buffer, sizeof(buffer));
-
-    if (strncmp(buffer, "209", 3) != 0) {
-        uio_error("We expected 209 response, but got: %.*s",
-                (int)r_len, buffer);
+    if (api_cmd_encrypt(uname, &res) != NOERR)
         return ERR_API_ENCRYPTFAIL;
-    }
 
-    salt_end = strchr(salt_start, ' ');
-    if (!salt_end) {
-        uio_error("Cannot find space after salt in response");
-        return ERR_API_ENCRYPTFAIL;
+    if (res.code != 209) {
+        err = ERR_API_ENCRYPTFAIL;
+        switch (res.code) {
+        case 309:
+            uio_error("You'r API key is not defined. Define it here: "
+                    "http://anidb.net/perl-bin/animedb.pl?show=profile");
+            break;
+        case 509:
+            uio_error("No such encryption type. Maybe client is outdated?");
+            break;
+        case 394:
+            uio_error("No user with name: '%s' found by AniDB", uname);
+            break;
+        default:
+            uio_error("Unknown encrypt failure: %ld", res.code);
+        }
+        return err;
     }
-    salt_len = salt_end - salt_start;
+    salt_len = strlen(res.encrypt.salt);
 
     md5Init(&md5_ctx);
     md5Update(&md5_ctx, (uint8_t*)api_key, strlen(api_key));
-    md5Update(&md5_ctx, (uint8_t*)salt_start, salt_len);
+    md5Update(&md5_ctx, (uint8_t*)res.encrypt.salt, salt_len);
     md5Finalize(&md5_ctx);
     memcpy(e_key, md5_ctx.digest, sizeof(e_key));
 
 #if 1
-    char *buffpos = buffer;
-    for (int i = 0; i < 16; i++)
-        buffpos += sprintf(buffpos, "%02x", e_key[i]);
-    uio_debug("Encryption key is: '%s'", buffer);
+    char bf[sizeof(e_key) * 2 + 1];
+    util_byte2hex(e_key, sizeof(e_key), false, bf);
+    uio_debug("Encryption key is: '%s'", bf);
 #endif
 
     api_encryption = true;
@@ -497,11 +501,11 @@ static ssize_t api_send(char *buffer, size_t data_len, size_t buf_size)
     read_len = net_read(buffer, buf_size);
     if (read_len < 0) {
         uio_error("!!! BAD PLACE EINTR !!!        report pls");
-        return en; /* This could lead so some problems if we also want to
-                      log out. If we hit this, the msg got sent, but we
-                      couldn't read the response. That means, in the
-                      logout call, this msg's data will be read
-                      Let's see if this ever comes up */
+        return read_len; /* This could lead so some problems if we also want to
+                            log out. If we hit this, the msg got sent, but we
+                            couldn't read the response. That means, in the
+                            logout call, this msg's data will be read
+                            Let's see if this ever comes up */
     }
     api_ratelimit_sent();
 
@@ -573,10 +577,54 @@ static char *api_get_field_mod(char *buffer, int32_t field_num)
 }
 #endif
 
+static enum error api_cmd_encrypt(const char *uname, struct api_result *res)
+{
+    pthread_mutex_lock(&api_work_mx);
+    char buffer[API_BUFSIZE];
+    long code;
+    enum error err = NOERR;
+    /* Usernames can't contain '&' */
+    ssize_t res_len = api_send(buffer, snprintf(buffer, sizeof(buffer),
+                "ENCRYPT user=%s&type=1", uname),
+            sizeof(buffer));
+
+    if (res_len < 0) {
+        if (res_len == -2 && should_exit)
+            err = ERR_SHOULD_EXIT;
+        else
+            err = ERR_API_COMMFAIL;
+        goto end;
+    }
+
+    code = api_res_code(buffer);
+    if (code == -1) {
+        err = ERR_API_RESP_INVALID;
+        goto end;
+    }
+
+    if (code == 209) {
+        char *fs;
+        size_t fl;
+        bool gfl = api_get_field(buffer, 2, &fs, &fl);
+
+        assert(gfl);
+        (void)gfl;
+        assert(sizeof(res->encrypt.salt) > fl);
+        memcpy(res->encrypt.salt, fs, fl);
+        res->encrypt.salt[fl] = '\0';
+    }
+
+    res->code = (uint16_t)code;
+
+end:
+    pthread_mutex_unlock(&api_work_mx);
+    return err;
+}
+
 enum error api_cmd_version(struct api_result *res)
 {
     char buffer[API_BUFSIZE] = "VERSION";
-    size_t res_len = api_send(buffer, strlen(buffer), sizeof(buffer));
+    ssize_t res_len = api_send(buffer, strlen(buffer), sizeof(buffer));
     long code;
     enum error err = NOERR;
     pthread_mutex_lock(&api_work_mx);
@@ -619,11 +667,11 @@ static enum error api_cmd_auth(const char *uname, const char *pass,
     pthread_mutex_lock(&api_work_mx);
     char buffer[API_BUFSIZE];
     long code;
-    size_t res_len = api_send(buffer, snprintf(buffer, sizeof(buffer),
+    enum error err = NOERR;
+    ssize_t res_len = api_send(buffer, snprintf(buffer, sizeof(buffer),
                 "AUTH user=%s&pass=%B&protover=" API_VERSION "&client=caniadd&"
                 "clientver=" PROG_VERSION "&enc=UTF-8", uname, pass),
             sizeof(buffer));
-    enum error err = NOERR;
 
     if (res_len < 0) {
         if (res_len == -2 && should_exit)
@@ -669,7 +717,7 @@ static enum error api_cmd_logout(struct api_result *res)
 {
     pthread_mutex_lock(&api_work_mx);
     char buffer[API_BUFSIZE];
-    size_t res_len = api_send(buffer, snprintf(buffer, sizeof(buffer),
+    ssize_t res_len = api_send(buffer, snprintf(buffer, sizeof(buffer),
                 "LOGOUT s=%s", api_session), sizeof(buffer));
     long code;
     enum error err = NOERR;
@@ -702,7 +750,7 @@ enum error api_cmd_uptime(struct api_result *res)
     if (!api_ka_now)
         pthread_mutex_lock(&api_work_mx);
     char buffer[API_BUFSIZE];
-    size_t res_len = api_send(buffer, snprintf(buffer, sizeof(buffer),
+    ssize_t res_len = api_send(buffer, snprintf(buffer, sizeof(buffer),
                 "UPTIME s=%s", api_session), sizeof(buffer));
     long code;
     enum error err = NOERR;
@@ -744,7 +792,7 @@ enum error api_cmd_mylistadd(int64_t size, const uint8_t *hash,
 {
     char buffer[API_BUFSIZE];
     char hash_str[ED2K_HASH_SIZE * 2 + 1];
-    size_t res_len;
+    ssize_t res_len;
     enum error err = NOERR;
     long code;
     pthread_mutex_lock(&api_work_mx);

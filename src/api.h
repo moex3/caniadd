@@ -11,9 +11,11 @@
 #define API_BUFSIZE 1400
 /* Session key maximum size, including '\0' */
 #define API_SMAXSIZE 16
+/* Encryption salt maximum size, including '\0' */
+#define API_SALTMAXSIZE 16
+
 /* The session timeout in miliseconds */
 #define API_TIMEOUT 30 * 60 * 1000
-
 /* How many miliseconds to wait between sends */
 #define API_SENDWAIT 2 * 1000
 /* The number of packets that are exccempt from the ratelimit */
@@ -54,6 +56,9 @@ struct api_auth_result {
         char *banned_reason;
     };
 };
+struct api_encrypt_result {
+    char salt[API_SALTMAXSIZE];
+};
 struct api_uptime_result {
     int32_t ms;
 };
@@ -78,6 +83,7 @@ struct api_result {
         struct api_auth_result auth;
         struct api_uptime_result uptime;
         e(mylistadd);
+        e(encrypt);
     };
 };
 #undef e
