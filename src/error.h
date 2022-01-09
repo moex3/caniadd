@@ -45,6 +45,8 @@
     E(ERR_THRD) /* Generic pthread error */ \
 \
     E(ERR_LIBEVENT) /* There are some problem with a libevent function */ \
+\
+    E(ERR_SHOULD_EXIT) /* Probably got a C-c, program should exit now */ \
     E(_ERR_COUNT) \
 
 

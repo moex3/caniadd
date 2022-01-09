@@ -248,7 +248,11 @@ ssize_t net_send(const void *msg, size_t msg_len)
 {
     ssize_t w_len = send(net_socket, msg, msg_len, 0);
     if (w_len == -1) {
-        uio_error("{net} Send failed: %s", strerror(errno));
+        int en = errno;
+
+        uio_error("{net} Send failed: %s", strerror(en));
+        if (en == EINTR)
+            return -2;
         return -1;
     }
     return w_len;
@@ -258,8 +262,14 @@ ssize_t net_read(void* out_data, size_t read_size)
 {
     ssize_t read = recv(net_socket, out_data, read_size, 0);
     if (read == -1) {
+        int en = errno;
+
         uio_error("{net} Read failed: %s", strerror(errno));
+        if (en == EINTR)
+            return -2;
         return -1;
     }
+    if (read == read_size)
+        uio_warning("{net} Data may have been discarded!");
     return read;
 }

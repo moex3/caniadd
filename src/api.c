@@ -15,6 +15,7 @@
 #include "config.h"
 #include "ed2k.h"
 #include "util.h"
+#include "globals.h"
 
 /* Needed, bcuz of custom %B format */
 #pragma GCC diagnostic push
@@ -409,10 +410,12 @@ void api_free()
             uio_error("Cannot cancel api keepalive thread");
         } else {
             int je = pthread_join(api_ka_thread, NULL);
-            if (je != 0) {
+            if (je != 0)
                 uio_error("Cannot join api keepalive thread: %s",
                         strerror(je));
-            }
+            else
+                uio_debug("Keepalive thread ended");
+
             if (pthread_mutex_destroy(&api_work_mx) != 0)
                 uio_error("Cannot destroy api work mutex");
         }
@@ -473,21 +476,33 @@ static void api_ratelimit()
     }
 }
 
+/*
+ * Returns the written byte count
+ * Or -1 on error, and -2 if errno was EINTR
+ */
 static ssize_t api_send(char *buffer, size_t data_len, size_t buf_size)
 {
     ssize_t read_len;
+    int en;
 
     api_ratelimit();
     uio_debug("{Api}: Sending: %.*s", (int)data_len, buffer);
     if (api_encryption)
         data_len = api_encrypt(buffer, data_len);
 
-    if (net_send(buffer, data_len) == -1) {
-        uio_error("Cannot send data: %s", strerror(errno));
-        return -1;
-    }
+    en = net_send(buffer, data_len);
+    if (en < 0)
+        return en;
 
     read_len = net_read(buffer, buf_size);
+    if (read_len < 0) {
+        uio_error("!!! BAD PLACE EINTR !!!        report pls");
+        return en; /* This could lead so some problems if we also want to
+                      log out. If we hit this, the msg got sent, but we
+                      couldn't read the response. That means, in the
+                      logout call, this msg's data will be read
+                      Let's see if this ever comes up */
+    }
     api_ratelimit_sent();
 
     if (api_encryption)
@@ -566,8 +581,11 @@ enum error api_cmd_version(struct api_result *res)
     enum error err = NOERR;
     pthread_mutex_lock(&api_work_mx);
 
-    if (res_len == -1) {
-        err = ERR_API_COMMFAIL;
+    if (res_len < 0) {
+        if (res_len == -2 && should_exit)
+            err = ERR_SHOULD_EXIT;
+        else
+            err = ERR_API_COMMFAIL;
         goto end;
     }
 
@@ -607,8 +625,11 @@ static enum error api_cmd_auth(const char *uname, const char *pass,
             sizeof(buffer));
     enum error err = NOERR;
 
-    if (res_len == -1) {
-        err = ERR_API_COMMFAIL;
+    if (res_len < 0) {
+        if (res_len == -2 && should_exit)
+            err = ERR_SHOULD_EXIT;
+        else
+            err = ERR_API_COMMFAIL;
         goto end;
     }
 
@@ -653,8 +674,11 @@ static enum error api_cmd_logout(struct api_result *res)
     long code;
     enum error err = NOERR;
 
-    if (res_len == -1) {
-        err = ERR_API_COMMFAIL;
+    if (res_len < 0) {
+        if (res_len == -2 && should_exit)
+            err = ERR_SHOULD_EXIT;
+        else
+            err = ERR_API_COMMFAIL;
         goto end;
     }
 
@@ -683,8 +707,11 @@ enum error api_cmd_uptime(struct api_result *res)
     long code;
     enum error err = NOERR;
 
-    if (res_len == -1) {
-        err = ERR_API_COMMFAIL;
+    if (res_len < 0) {
+        if (res_len == -2 && should_exit)
+            err = ERR_SHOULD_EXIT;
+        else
+            err = ERR_API_COMMFAIL;
         goto end;
     }
 
@@ -729,8 +756,11 @@ enum error api_cmd_mylistadd(int64_t size, const uint8_t *hash,
                 api_session, size, hash_str, ml_state, watched),
             sizeof(buffer));
 
-    if (res_len == -1) {
-        err = ERR_API_COMMFAIL;
+    if (res_len < 0) {
+        if (res_len == -2 && should_exit)
+            err = ERR_SHOULD_EXIT;
+        else
+            err = ERR_API_COMMFAIL;
         goto end;
     }
 
