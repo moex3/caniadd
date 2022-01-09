@@ -23,13 +23,14 @@ make
 - NAT handling
 - Multi thread hashing
 - Read/write timeout in net
-- Api ratelimit (the other part)
 - Decode escaping from server
 - Use a config file
 - Add newline escape to server
 - Better field parsing, remove the horrors at code 310
 - Add myliststats cmd as --stats arg
 - Add support for compression
+- Implement session saving between different invocations, and session destroying
+- Automatically remove found anime from wishlist
 - Make deleting from mylist possible, with
   - Name regexes,
   - If file is not found at a scan

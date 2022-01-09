@@ -55,7 +55,7 @@ static bool api_ka_now = false; /* Are we doing keepalive now? */
 
 static struct timespec api_last_packet = {0}; /* Last packet time */
 static int32_t api_packet_count = 0; /* Only increment */
-static int32_t api_fast_packet_count = 0; /* Incremented or decrement */
+//static int32_t api_fast_packet_count = 0; /* Increment or decrement */
 
 static int api_escaped_string(FILE *io, const struct printf_info *info,
         const void *const *args)
@@ -314,7 +314,6 @@ enum error api_clock_init()
     struct timespec ts;
     memset(&api_last_packet, 0, sizeof(api_last_packet));
     api_packet_count = 0;
-    api_fast_packet_count = 0;
 
     if (clock_getres(API_CLOCK, &ts) != 0) {
         uio_error("Cannot get clock resolution: %s", strerror(errno));
@@ -436,6 +435,7 @@ void api_free()
  */
 static void api_ratelimit_sent()
 {
+    api_packet_count++;
     clock_gettime(API_CLOCK, &api_last_packet);
 }
 
@@ -443,16 +443,25 @@ static void api_ratelimit()
 {
     struct timespec ts = {0};
     uint64_t msdiff, mswait;
+    uint64_t msrate = api_packet_count >= API_LONGTERM_PACKETS ?
+        API_SENDWAIT_LONG : API_SENDWAIT;
+
+    /* First of all, the first N packets are unmetered */
+    if (api_packet_count <= API_FREESEND) {
+        uio_debug("This packet is for free! Yay :D (%d/%d)",
+                api_packet_count, API_FREESEND);
+        return;
+    }
 
     clock_gettime(API_CLOCK, &ts);
     msdiff = util_timespec_diff(&api_last_packet, &ts);
     uio_debug("Time since last packet: %ld ms", msdiff);
 
-    if (msdiff >= API_SENDWAIT)
+    if (msdiff >= msrate)
         return; /* No ratelimiting is needed */
 
     /* Need ratelimit, so do it here for now */
-    mswait = API_SENDWAIT - msdiff;
+    mswait = msrate - msdiff;
     uio_debug("Ratelimit is needed, sleeping for %ld ms", mswait);
 
     MS_TO_TIMESPEC_L(ts, mswait);
