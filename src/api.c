@@ -1,5 +1,6 @@
 #include <stdbool.h>
 #include <string.h>
+#include <stdarg.h>
 #include <assert.h>
 #include <printf.h>
 #include <time.h>
@@ -31,16 +32,9 @@
     #error "No monotonic clock"
 #endif
 
-#define MS_TO_TIMESPEC(ts, ms) { \
-    ts->tv_sec = ms / 1000; \
-    ts->tv_nsec = (ms % 1000) * 1000000; \
-}
-
-#define MS_TO_TIMESPEC_L(ts, ms) { \
-    ts.tv_sec = ms / 1000; \
-    ts.tv_nsec = (ms % 1000) * 1000000; \
-}
-
+static enum error api_cmd_base(char buffer[API_BUFSIZE],
+        struct api_result *res, const char *fmt, ...)
+__attribute__((format (printf, 3, 4)));
 static enum error api_cmd_logout(struct api_result *res);
 static enum error api_cmd_auth(const char *uname, const char *pass,
         struct api_result *res);
@@ -53,11 +47,13 @@ static bool api_encryption = false;
 
 static pthread_t api_ka_thread = 0;
 static pthread_mutex_t api_work_mx;
-static bool api_ka_now = false; /* Are we doing keepalive now? */
 
 static struct timespec api_last_packet = {0}; /* Last packet time */
 static int32_t api_packet_count = 0; /* Only increment */
 //static int32_t api_fast_packet_count = 0; /* Increment or decrement */
+
+/* For some commands, we need a global retry counter */
+static int32_t api_g_retry_count = 0;
 
 static int api_escaped_string(FILE *io, const struct printf_info *info,
         const void *const *args)
@@ -186,16 +182,29 @@ static size_t api_decrypt(char *buffer, size_t data_len)
     return ret_len;
 }
 
-static enum error api_auth(const char* uname, const char *passw)
+static enum error api_auth()
 {
     struct api_result res;
     enum error err = NOERR;
+    char **uname, **passw;
+
+    if (config_get("username", (void**)&uname) != NOERR) {
+        uio_error("Username is not specified, but it is required!");
+        return ERR_OPT_REQUIRED;
+    }
+    if (config_get("password", (void**)&passw) != NOERR) {
+        uio_error("Password is not specified, but it is required!");
+        return ERR_OPT_REQUIRED;
+    }
+    /*
+     * We could try passing in a session key, if we are executing
+     * a login in response to a nologin or inv session error code?
+     */
 
     if (!api_encryption)
         uio_warning("Logging in without encryption!");
-    if (api_cmd_auth(uname, passw, &res) != NOERR) {
+    if (api_cmd_auth(*uname, *passw, &res) != NOERR)
         return ERR_API_AUTH_FAIL;
-    }
 
     switch (res.code) {
     case 201:
@@ -217,12 +226,6 @@ static enum error api_auth(const char* uname, const char *passw)
         case 504:
             uio_error("Client is banned :( Reason: %s", res.auth.banned_reason);
             free(res.auth.banned_reason);
-            break;
-        case 505:
-            uio_error("Illegal input or access denied");
-            break;
-        case 601:
-            uio_error("AniDB out of service");
             break;
         default:
             uio_error("Unknown error: %hu", res.code);
@@ -301,13 +304,11 @@ void *api_keepalive_main(void *arg)
          * Could be replaced with a pthread_cleanup_push ? */
         pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
         pthread_mutex_lock(&api_work_mx);
-        api_ka_now = true;
 
         uio_debug("G'moooooning! Is it time to keep our special connection alive?");
 
         api_keepalive(&ka_time);
         uio_debug("Next wakey-wakey in %ld seconds", ka_time.tv_sec);
-        api_ka_now = false;
         pthread_mutex_unlock(&api_work_mx);
         pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
     }
@@ -333,7 +334,7 @@ enum error api_clock_init()
 enum error api_init(bool auth)
 {
     enum error err = NOERR;
-    const char **api_key, **uname, **passwd;
+    const char **api_key, **uname;
 
     err = api_clock_init();
     if (err != NOERR)
@@ -352,7 +353,8 @@ enum error api_init(bool auth)
         }
         err = api_init_encrypt(*api_key, *uname);
         if (err != NOERR) {
-            uio_error("Cannot init api encryption");
+            if (err != ERR_SHOULD_EXIT)
+                uio_error("Cannot init api encryption");
             goto fail;
         }
     }
@@ -366,26 +368,24 @@ enum error api_init(bool auth)
     }
 
     if (auth) {
-        if (config_get("username", (void**)&uname) != NOERR) {
-            uio_error("Username is not specified, but it is required!");
-            err = ERR_OPT_REQUIRED;
-            goto fail;
-        }
-        if (config_get("password", (void**)&passwd) != NOERR) {
-            uio_error("Password is not specified, but it is required!");
-            err = ERR_OPT_REQUIRED;
-            goto fail;
-        }
-        err = api_auth(*uname, *passwd);
+        pthread_mutexattr_t attr;
+        int mxres;
+
+        err = api_auth();
         if (err != NOERR)
             goto fail;
 
         /* Only do keep alive if we have a session */
-        if (pthread_mutex_init(&api_work_mx, NULL) != 0) {
+        pthread_mutexattr_init(&attr);
+        pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
+        mxres = pthread_mutex_init(&api_work_mx, NULL);
+        pthread_mutexattr_destroy(&attr);
+        if (mxres != 0) {
             uio_error("Cannot create mutex");
             err = ERR_THRD;
             goto fail;
         }
+
         if (pthread_create(&api_ka_thread, NULL, api_keepalive_main, NULL) != 0) {
             uio_error("Cannot create api keepalive thread");
             err = ERR_THRD;
@@ -577,32 +577,146 @@ static char *api_get_field_mod(char *buffer, int32_t field_num)
 }
 #endif
 
+/* Basically convert remote codes into local error codes */
+static enum error api_cmd_base_errorc(long code, char buffer[API_BUFSIZE])
+{
+    switch (code) {
+    case APICODE_ILLEGAL_INPUT_OR_ACCESS_DENIED:
+        uio_error("Got unretryable error code: %d", code);
+        return ERR_API_INVCOMM;
+    case APICODE_BANNED:
+        {
+            char *ls;
+            size_t ll;
+
+            api_get_line(buffer, 2, &ls, &ll);
+            uio_error("Banned: %.*s", (int)ll, ls);
+            return ERR_API_BANNED;
+        }
+    case APICODE_UNKNOWN_COMMAND:
+        uio_error("The sent command is unknown");
+        return ERR_API_CMD_UNK;
+    case APICODE_INTERNAL_SERVER_ERROR:
+        uio_error("Internal server error!");
+        return ERR_API_INT_SRV;
+    case APICODE_ANIDB_OUT_OF_SERVICE:
+        uio_error("AniDB is currently out of service");
+        return ERR_API_OOS;
+    case APICODE_SERVER_BUSY:
+        uio_warning("Server is busy rn, trying again later");
+        return ERR_API_SRV_BUSY;
+    case APICODE_TIMEOUT:
+        uio_debug("Timed out, retrying");
+        return ERR_API_TIMEOUT;
+    case APICODE_LOGIN_FIRST:
+        uio_error("This command required AUTH");
+        return ERR_API_NOLOGIN;
+    case APICODE_ACCESS_DENIED:
+        uio_error("Access is denied for this info");
+        return ERR_API_AXX_DENIED;
+    case APICODE_INVALID_SESSION:
+        uio_error("The login session is invalid");
+        return ERR_API_INV_SESSION;
+    default:
+        /* Not an error, or at least not a base error */
+        return NOERR;
+    }
+}
+
+/*
+ * Base for all api_cmd's. This will also execute the default
+ * error code handers, like 505, 555, 604...
+ * If success, res.code will be filled out
+ */
+static enum error api_cmd_base(char buffer[API_BUFSIZE], struct api_result *res,
+        const char *fmt, ...)
+{
+    int send_len;
+    enum error err = NOERR;
+    va_list ap;
+    int retry_count = 0;
+
+    va_start(ap, fmt);
+    send_len = vsnprintf(buffer, API_BUFSIZE, fmt, ap);
+    va_end(ap);
+
+    pthread_mutex_lock(&api_work_mx);
+    api_g_retry_count = 0;
+
+    while (retry_count < API_MAX_TRYAGAIN &&
+            api_g_retry_count < API_MAX_TRYAGAIN) {
+        long code;
+        ssize_t res_len = api_send(buffer, send_len, API_BUFSIZE);
+
+        if (res_len < 0) {
+            if (res_len == -2 && should_exit)
+                err = ERR_SHOULD_EXIT;
+            else
+                err = ERR_API_COMMFAIL;
+            goto end;
+        }
+
+        code = api_res_code(buffer);
+        if (code == -1) {
+            err = ERR_API_RESP_INVALID;
+            goto end;
+        }
+        res->code = code;
+
+        err = api_cmd_base_errorc(code, buffer);
+        if (err == ERR_API_OOS || err == ERR_API_SRV_BUSY ||
+                err == ERR_API_TIMEOUT) {
+            struct timespec ts;
+
+            MS_TO_TIMESPEC_L(ts, API_TRYAGAIN_TIME);
+            retry_count++;
+            uio_debug("Retry after %ld ms (%d/%d)", API_TRYAGAIN_TIME,
+                    retry_count, API_MAX_TRYAGAIN);
+            if (nanosleep(&ts, NULL) == -1) {
+                if (errno == EINTR && should_exit) {
+                    err = ERR_SHOULD_EXIT;
+                    goto end;
+                }
+            }
+            continue;
+        }
+
+        if (err == ERR_API_NOLOGIN || err == ERR_API_INV_SESSION) {
+            api_g_retry_count++;
+            if (api_g_retry_count < API_MAX_TRYAGAIN) {
+                uio_debug("Let's try loggin in agane");
+                api_authed = false; /* We got logged out probably */
+                err = api_auth(); /* -> will call this function */
+                if (api_g_retry_count < API_MAX_TRYAGAIN)
+                    continue;
+            }
+            break;
+        }
+
+        break;
+    };
+    if (retry_count >= API_MAX_TRYAGAIN ||
+            api_g_retry_count >= API_MAX_TRYAGAIN) {
+        uio_debug("Max retry count reached");
+        goto end;
+    }
+
+end:
+    pthread_mutex_unlock(&api_work_mx);
+    return err;
+}
+
 static enum error api_cmd_encrypt(const char *uname, struct api_result *res)
 {
-    pthread_mutex_lock(&api_work_mx);
     char buffer[API_BUFSIZE];
-    long code;
-    enum error err = NOERR;
+    enum error err;
+
     /* Usernames can't contain '&' */
-    ssize_t res_len = api_send(buffer, snprintf(buffer, sizeof(buffer),
-                "ENCRYPT user=%s&type=1", uname),
-            sizeof(buffer));
+    err = api_cmd_base(buffer, res, "ENCRYPT user=%s&type=1", uname);
+    if (err != NOERR)
+        return err;
 
-    if (res_len < 0) {
-        if (res_len == -2 && should_exit)
-            err = ERR_SHOULD_EXIT;
-        else
-            err = ERR_API_COMMFAIL;
-        goto end;
-    }
-
-    code = api_res_code(buffer);
-    if (code == -1) {
-        err = ERR_API_RESP_INVALID;
-        goto end;
-    }
-
-    if (code == 209) {
+    if (res->code == APICODE_ENCRYPTION_ENABLED) {
         char *fs;
         size_t fl;
         bool gfl = api_get_field(buffer, 2, &fs, &fl);
@@ -614,36 +728,19 @@ static enum error api_cmd_encrypt(const char *uname, struct api_result *res)
         res->encrypt.salt[fl] = '\0';
     }
 
-    res->code = (uint16_t)code;
-
-end:
-    pthread_mutex_unlock(&api_work_mx);
     return err;
 }
 
 enum error api_cmd_version(struct api_result *res)
 {
-    char buffer[API_BUFSIZE] = "VERSION";
-    ssize_t res_len = api_send(buffer, strlen(buffer), sizeof(buffer));
-    long code;
-    enum error err = NOERR;
-    pthread_mutex_lock(&api_work_mx);
+    char buffer[API_BUFSIZE];
+    enum error err;
 
-    if (res_len < 0) {
-        if (res_len == -2 && should_exit)
-            err = ERR_SHOULD_EXIT;
-        else
-            err = ERR_API_COMMFAIL;
-        goto end;
-    }
+    err = api_cmd_base(buffer, res, "VERSION");
+    if (err != NOERR)
+        return err;
 
-    code = api_res_code(buffer);
-    if (code == -1) {
-        err = ERR_API_RESP_INVALID;
-        goto end;
-    }
-
-    if (code == 998) {
+    if (res->code == APICODE_VERSION) {
         char *ver_start;
         size_t ver_len;
         bool glr = api_get_line(buffer, 2, &ver_start, &ver_len);
@@ -654,40 +751,24 @@ enum error api_cmd_version(struct api_result *res)
         memcpy(res->version.version_str, ver_start, ver_len);
         res->version.version_str[ver_len] = '\0';
     }
-    res->code = (uint16_t)code;
     
-end:
-    pthread_mutex_unlock(&api_work_mx);
     return err;
 }
 
 static enum error api_cmd_auth(const char *uname, const char *pass,
         struct api_result *res)
 {
-    pthread_mutex_lock(&api_work_mx);
     char buffer[API_BUFSIZE];
-    long code;
-    enum error err = NOERR;
-    ssize_t res_len = api_send(buffer, snprintf(buffer, sizeof(buffer),
-                "AUTH user=%s&pass=%B&protover=" API_VERSION "&client=caniadd&"
-                "clientver=" PROG_VERSION "&enc=UTF-8", uname, pass),
-            sizeof(buffer));
+    enum error err;
 
-    if (res_len < 0) {
-        if (res_len == -2 && should_exit)
-            err = ERR_SHOULD_EXIT;
-        else
-            err = ERR_API_COMMFAIL;
-        goto end;
-    }
+    err = api_cmd_base(buffer, res, "AUTH user=%s&pass=%B&protover="
+            API_VERSION "&client=caniadd&clientver=" PROG_VERSION
+            "&enc=UTF-8", uname, pass);
+    if (err != NOERR)
+        return err;
 
-    code = api_res_code(buffer);
-    if (code == -1) {
-        err = ERR_API_RESP_INVALID;
-        goto end;
-    }
-
-    if (code == 200 || code == 201) {
+    if (res->code == APICODE_LOGIN_ACCEPTED ||
+            res->code == APICODE_LOGIN_ACCEPTED_NEW_VERSION) {
         char *sess;
         size_t sess_len;
         bool gfr = api_get_field(buffer, 2, &sess, &sess_len);
@@ -697,7 +778,7 @@ static enum error api_cmd_auth(const char *uname, const char *pass,
         assert(sess_len < sizeof(res->auth.session_key));
         memcpy(res->auth.session_key, sess, sess_len);
         res->auth.session_key[sess_len] = '\0';
-    } else if (code == 504) {
+    } else if (res->code == APICODE_CLIENT_BANNED) {
         char *reason;
         size_t reason_len;
         bool gfr = api_get_field(buffer, 5, &reason, &reason_len);
@@ -706,70 +787,32 @@ static enum error api_cmd_auth(const char *uname, const char *pass,
         (void)gfr;
         res->auth.banned_reason = strndup(reason, reason_len);
     }
-    res->code = (uint16_t)code;
 
-end:
-    pthread_mutex_unlock(&api_work_mx);
     return err;
 }
 
 static enum error api_cmd_logout(struct api_result *res)
 {
-    pthread_mutex_lock(&api_work_mx);
     char buffer[API_BUFSIZE];
-    ssize_t res_len = api_send(buffer, snprintf(buffer, sizeof(buffer),
-                "LOGOUT s=%s", api_session), sizeof(buffer));
-    long code;
-    enum error err = NOERR;
+    enum error err;
 
-    if (res_len < 0) {
-        if (res_len == -2 && should_exit)
-            err = ERR_SHOULD_EXIT;
-        else
-            err = ERR_API_COMMFAIL;
-        goto end;
-    }
+    err = api_cmd_base(buffer, res, "LOGOUT s=%s", api_session);
+    if (err != NOERR)
+        return err;
 
-    code = api_res_code(buffer);
-    if (code == -1) {
-        err = ERR_API_RESP_INVALID;
-        goto end;
-    }
-
-    res->code = (uint16_t)code;
-
-end:
-    pthread_mutex_unlock(&api_work_mx);
     return err;
 }
 
 enum error api_cmd_uptime(struct api_result *res)
 {
-    /* If mutex is not already locked from the keepalive thread */
-    /* Or we could use a recursive mutex? */
-    if (!api_ka_now)
-        pthread_mutex_lock(&api_work_mx);
     char buffer[API_BUFSIZE];
-    ssize_t res_len = api_send(buffer, snprintf(buffer, sizeof(buffer),
-                "UPTIME s=%s", api_session), sizeof(buffer));
-    long code;
-    enum error err = NOERR;
+    enum error err;
 
-    if (res_len < 0) {
-        if (res_len == -2 && should_exit)
-            err = ERR_SHOULD_EXIT;
-        else
-            err = ERR_API_COMMFAIL;
-        goto end;
-    }
+    err = api_cmd_base(buffer, res, "UPTIME s=%s", api_session);
+    if (err != NOERR)
+        return err;
 
-    code = api_res_code(buffer);
-    if (code == -1) {
-        err = ERR_API_RESP_INVALID;
-        goto end;
-    }
-
-    if (code == 208) {
+    if (res->code == APICODE_UPTIME) {
         char *ls;
         size_t ll;
         bool glf = api_get_line(buffer, 2, &ls, &ll);
@@ -779,11 +822,6 @@ enum error api_cmd_uptime(struct api_result *res)
         res->uptime.ms = strtol(ls, NULL, 10);
     }
 
-    res->code = (uint16_t)code;
-
-end:
-    if (!api_ka_now)
-        pthread_mutex_unlock(&api_work_mx);
     return err;
 }
 
@@ -792,33 +830,17 @@ enum error api_cmd_mylistadd(int64_t size, const uint8_t *hash,
 {
     char buffer[API_BUFSIZE];
     char hash_str[ED2K_HASH_SIZE * 2 + 1];
-    ssize_t res_len;
     enum error err = NOERR;
-    long code;
-    pthread_mutex_lock(&api_work_mx);
 
     util_byte2hex(hash, ED2K_HASH_SIZE, false, hash_str);
     /* Wiki says file size is 4 bytes, but no way that's true lol */
-    res_len = api_send(buffer, snprintf(buffer, sizeof(buffer),
-                "MYLISTADD s=%s&size=%ld&ed2k=%s&state=%hu&viewed=%d",
-                api_session, size, hash_str, ml_state, watched),
-            sizeof(buffer));
+    err = api_cmd_base(buffer, res,
+            "MYLISTADD s=%s&size=%ld&ed2k=%s&state=%hu&viewed=%d",
+            api_session, size, hash_str, ml_state, watched);
+    if (err != NOERR)
+        return err;
 
-    if (res_len < 0) {
-        if (res_len == -2 && should_exit)
-            err = ERR_SHOULD_EXIT;
-        else
-            err = ERR_API_COMMFAIL;
-        goto end;
-    }
-
-    code = api_res_code(buffer);
-    if (code == -1) {
-        err = ERR_API_RESP_INVALID;
-        goto end;
-    }
-
-    if (code == 210) {
+    if (res->code == APICODE_MYLIST_ENTRY_ADDED) {
         char *ls, id_str[12];
         size_t ll;
         bool glr = api_get_line(buffer, 2, &ls, &ll);
@@ -832,7 +854,7 @@ enum error api_cmd_mylistadd(int64_t size, const uint8_t *hash,
         /* Wiki says these id's are 4 bytes, which is untrue...
          * that page may be a little out of date (or they just
          * expect us to use common sense lmao */
-    } else if (code == 310) {
+    } else if (res->code == APICODE_FILE_ALREADY_IN_MYLIST) {
         /* {int4 lid}|{int4 fid}|{int4 eid}|{int4 aid}|{int4 gid}|
          * {int4 date}|{int2 state}|{int4 viewdate}|{str storage}|
          * {str source}|{str other}|{int2 filestate} */
@@ -880,10 +902,6 @@ enum error api_cmd_mylistadd(int64_t size, const uint8_t *hash,
         }
     }
 
-    res->code = (uint16_t)code;
-
-end:
-    pthread_mutex_unlock(&api_work_mx);
     return err;
 }
 

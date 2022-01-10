@@ -4,6 +4,16 @@
 #include <stddef.h>
 #include <stdbool.h>
 
+#define MS_TO_TIMESPEC(ts, ms) { \
+    ts->tv_sec = ms / 1000; \
+    ts->tv_nsec = (ms % 1000) * 1000000; \
+}
+
+#define MS_TO_TIMESPEC_L(ts, ms) { \
+    ts.tv_sec = ms / 1000; \
+    ts.tv_nsec = (ms % 1000) * 1000000; \
+}
+
 /*
  * Convert bytes to a hex string
  * out needs to be at least (bytes_len * 2 + 1) bytes

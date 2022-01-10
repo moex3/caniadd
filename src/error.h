@@ -35,6 +35,16 @@
     E(ERR_API_LOGOUT) /* Logout failed */ \
     E(ERR_API_PRINTFFUNC) /* New printf function registration failed */ \
     E(ERR_API_CLOCK) /* Some error with clocks */ \
+    E(ERR_API_INVCOMM) /* Invalid command or command arguments */ \
+    E(ERR_API_BANNED) /* Got banned */ \
+    E(ERR_API_CMD_UNK) /* Unknown command */ \
+    E(ERR_API_INT_SRV) /* Internal server error */ \
+    E(ERR_API_OOS) /* AniDB is out of service rn */ \
+    E(ERR_API_SRV_BUSY) /* Server is too busy, try again later */ \
+    E(ERR_API_TIMEOUT) /* Timed out, delay and resubmit */ \
+    E(ERR_API_NOLOGIN) /* Login is required for this command */ \
+    E(ERR_API_AXX_DENIED) /* Access is denied */ \
+    E(ERR_API_INV_SESSION) /* Session is invalid */ \
 \
     E(ERR_CACHE_SQLITE) /* Generic sqlite error code */ \
     E(ERR_CACHE_EXISTS) /* Entry already exists, as determined by lid */ \
