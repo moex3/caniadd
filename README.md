@@ -26,7 +26,6 @@ make
 - Decode escaping from server
 - Use a config file
 - Add newline escape to server
-- Better field parsing, remove the horrors at code 310
 - Add myliststats cmd as --stats arg
 - Add support for compression
 - Implement session saving between different invocations, and session destroying

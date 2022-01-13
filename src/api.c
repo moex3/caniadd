@@ -557,6 +557,55 @@ static bool api_get_field(const char *buffer, int32_t field_num,
     return api_get_fl(buffer, field_num, " |\n", out_field_start, out_field_len);
 }
 
+/*
+ * Parse a line, where fields are separated by '|'
+ * Varargs should be:
+ *  A scanf like format specifier - out ptr, ...
+ *  Ended with a NULL format specifier
+ *
+ * %s is overridden, so if the string is 0 length, it will return NULL
+ *
+ * Returns the number of fields parsed
+ */
+int api_field_parse(const char *line, ...)
+{
+    int f_count = 1;
+    va_list ap;
+    const char *fmt;
+
+    va_start(ap, line);
+    fmt = va_arg(ap, const char*);
+    while (fmt) {
+        char *fs;
+        size_t fl;
+        void *ptr;
+        char scan_fmt[32];
+
+        assert(fmt[0] == '%');
+        api_get_fl(line, f_count, "|\n", &fs, &fl);
+        assert(!(fl == 0 && fmt[1] != 's'));
+        ptr = va_arg(ap, void*);
+        if (fl == 0) {
+            *(void**)ptr = NULL;
+            goto next;
+        }
+        if (fmt[1] == 's') {
+            *(char**)ptr = strndup(fs, fl);
+            goto next;
+        }
+        snprintf(scan_fmt, sizeof(scan_fmt), "%%%d%s", fl, &fmt[1]);
+        if (sscanf(fs, scan_fmt, ptr) != 1)
+            goto end;
+next:
+        f_count++;
+        fmt = va_arg(ap, const char*);
+    }
+
+end:
+    va_end(ap);
+    return f_count - 1;
+}
+
 #if 0
 static char *api_get_field_mod(char *buffer, int32_t field_num)
 {
@@ -858,6 +907,7 @@ enum error api_cmd_mylistadd(int64_t size, const uint8_t *hash,
         /* {int4 lid}|{int4 fid}|{int4 eid}|{int4 aid}|{int4 gid}|
          * {int4 date}|{int2 state}|{int4 viewdate}|{str storage}|
          * {str source}|{str other}|{int2 filestate} */
+        int fc; /* the Freedom Club */
         char *ls;
         size_t ll;
         struct api_mylistadd_result *mr = &res->mylistadd;
@@ -866,39 +916,23 @@ enum error api_cmd_mylistadd(int64_t size, const uint8_t *hash,
         assert(ll < API_BUFSIZE - 1);
         (void)glr;
 
-        ls[ll] = '\0';
-        void *fptrs[] = {
-            &mr->lid, &mr->fid, &mr->eid, &mr->aid, &mr->gid, &mr->date,
-            &mr->state, &mr->viewdate, &mr->storage, &mr->source,
-            &mr->other, &mr->filestate,
-        };
-        for (int idx = 1; idx <= 12; idx++) {
-            char *fs, *endptr;
-            size_t fl;
-            bool pr;
-            uint64_t val;
-            size_t cpy_size = sizeof(mr->lid);
+        fc = api_field_parse(ls,
+                "%Lu", &mr->lid, "%Lu", &mr->fid, "%Lu", &mr->eid,
+                "%Lu", &mr->aid, "%Lu", &mr->gid, "%Lu", &mr->date,
+                "%hu", &mr->state, "%Lu", &mr->viewdate, "%s", &mr->storage,
+                "%s", &mr->source, "%s", &mr->other, "%hu", &mr->filestate,
+                NULL);
 
-            if (idx == 7)
-                cpy_size = sizeof(mr->state);
-            if (idx == 12)
-                cpy_size = sizeof(mr->filestate);
-
-            pr = api_get_field(ls, idx, &fs, &fl);
-            assert(pr);
-            (void)pr;
-            
-            if (idx == 9 || idx == 10 || idx == 11) { /* string fields */
-                if (fl == 0)
-                    *(char**)fptrs[idx-1] = NULL;
-                else
-                    *(char**)fptrs[idx-1] = strndup(fs, fl);
-                continue;
-            }
-
-            val = strtoull(fs, &endptr, 10);
-            assert(!(val == 0 && fs == endptr));
-            memcpy(fptrs[idx-1], &val, cpy_size);
+        uio_debug("Fc is: %d", fc);
+        if (fc != 12) {
+            if (fc >= 9)
+                free(mr->storage);
+            if (fc >= 10)
+                free(mr->source);
+            if (fc >= 11)
+                free(mr->other);
+            uio_error("Scanf only parsed %d", fc);
+            err = ERR_API_RESP_INVALID;
         }
     }
 
