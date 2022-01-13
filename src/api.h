@@ -203,6 +203,17 @@ enum file_state {
     FILE_STATE_OTHER = 100,
 };
 
+struct api_mylistadd_opts {
+    enum mylist_state state;
+    bool watched;
+    uint64_t wdate;
+    struct {
+        bool state_set : 1;
+        bool watched_set : 1;
+        bool wdate_set : 1;
+    };
+};
+
 struct api_version_result {
     char version_str[40];
 };
@@ -231,6 +242,9 @@ struct api_mylistadd_result {
         };
     };
 };
+struct api_mylistmod_result {
+    uint32_t n_edits;
+};
 
 #define e(n) struct api_##n##_result n
 struct api_result {
@@ -241,6 +255,7 @@ struct api_result {
         struct api_uptime_result uptime;
         e(mylistadd);
         e(encrypt);
+        e(mylistmod);
     };
 };
 #undef e
@@ -251,6 +266,8 @@ void api_free();
 enum error api_cmd_version(struct api_result *res);
 enum error api_cmd_uptime(struct api_result *res);
 enum error api_cmd_mylistadd(int64_t size, const uint8_t *hash,
-        enum mylist_state fstate, bool watched, struct api_result *res);
+        struct api_mylistadd_opts *opts, struct api_result *res);
+enum error api_cmd_mylistmod(uint64_t lid, struct api_mylistadd_opts *opts,
+        struct api_result *res);
 
 #endif /* _API_H */

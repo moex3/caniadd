@@ -1,5 +1,7 @@
+#define _XOPEN_SOURCE
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "util.h"
 
@@ -36,4 +38,27 @@ uint64_t util_timespec_diff(const struct timespec *past,
     int64_t sdiff = future->tv_sec - past->tv_sec;
     int64_t nsdiff = future->tv_nsec - past->tv_nsec; 
     return sdiff * 1000 + (nsdiff / 1000000);
+}
+
+uint64_t util_iso2unix(const char *isotime)
+{
+    struct tm tm = {0};
+    char *ms = strptime(isotime, "%Y-%m-%d", &tm);
+
+    if (!ms || (*ms != '\0' && *ms != ' ' && *ms != 'T'))
+        return 0;
+    if (*ms == '\0')
+        ms = "T00:00:00";
+
+    ms = strptime(ms + 1, "%H:%M", &tm);
+    if (!ms || (*ms != '\0' && *ms != ':'))
+        return 0;
+    if (*ms == '\0')
+        ms = ":00";
+
+    ms = strptime(ms + 1, "%S", &tm);
+    if (!ms)
+        return 0;
+
+    return mktime(&tm);
 }

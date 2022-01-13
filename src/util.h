@@ -42,4 +42,10 @@ char *util_basename(const char *fullpath);
 uint64_t util_timespec_diff(const struct timespec *past,
         const struct timespec *future);
 
+/*
+ * Convert a date and optionally time string into unix time
+ * Returns 0 on error
+ */
+uint64_t util_iso2unix(const char *isotime);
+
 #endif /* _UTIL_H */

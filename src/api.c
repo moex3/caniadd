@@ -677,17 +677,11 @@ static enum error api_cmd_base_errorc(long code, char buffer[API_BUFSIZE])
  * error code handers, like 505, 555, 604...
  * If success, res.code will be filled out
  */
-static enum error api_cmd_base(char buffer[API_BUFSIZE], struct api_result *res,
-        const char *fmt, ...)
+static enum error api_cmd_base_pref(char buffer[API_BUFSIZE], int send_len,
+        struct api_result *res)
 {
-    int send_len;
     enum error err = NOERR;
-    va_list ap;
     int retry_count = 0;
-
-    va_start(ap, fmt);
-    send_len = vsnprintf(buffer, API_BUFSIZE, fmt, ap);
-    va_end(ap);
 
     pthread_mutex_lock(&api_work_mx);
     api_g_retry_count = 0;
@@ -753,6 +747,18 @@ static enum error api_cmd_base(char buffer[API_BUFSIZE], struct api_result *res,
 end:
     pthread_mutex_unlock(&api_work_mx);
     return err;
+}
+static enum error api_cmd_base(char buffer[API_BUFSIZE], struct api_result *res,
+        const char *fmt, ...)
+{
+    va_list ap;
+    int send_len;
+
+    va_start(ap, fmt);
+    send_len = vsnprintf(buffer, API_BUFSIZE, fmt, ap);
+    va_end(ap);
+
+    return api_cmd_base_pref(buffer, send_len, res);
 }
 
 static enum error api_cmd_encrypt(const char *uname, struct api_result *res)
@@ -875,17 +881,28 @@ enum error api_cmd_uptime(struct api_result *res)
 }
 
 enum error api_cmd_mylistadd(int64_t size, const uint8_t *hash,
-        enum mylist_state ml_state, bool watched, struct api_result *res)
+        struct api_mylistadd_opts *opts, struct api_result *res)
 {
     char buffer[API_BUFSIZE];
     char hash_str[ED2K_HASH_SIZE * 2 + 1];
     enum error err = NOERR;
+    int send_len;
 
     util_byte2hex(hash, ED2K_HASH_SIZE, false, hash_str);
     /* Wiki says file size is 4 bytes, but no way that's true lol */
-    err = api_cmd_base(buffer, res,
-            "MYLISTADD s=%s&size=%ld&ed2k=%s&state=%hu&viewed=%d",
-            api_session, size, hash_str, ml_state, watched);
+    send_len = snprintf(buffer, sizeof(buffer),
+            "MYLISTADD s=%s&size=%ld&ed2k=%s",
+            api_session, size, hash_str);
+    if (opts->state_set)
+        send_len += snprintf(buffer + send_len, sizeof(buffer) - send_len,
+                "&state=%hu", opts->state);
+    if (opts->watched_set)
+        send_len += snprintf(buffer + send_len, sizeof(buffer) - send_len,
+                "&viewed=%d", opts->watched);
+    if (opts->wdate_set)
+        send_len += snprintf(buffer + send_len, sizeof(buffer) - send_len,
+                "&viewdate=%ld", opts->wdate);
+    err = api_cmd_base_pref(buffer, send_len, res);
     if (err != NOERR)
         return err;
 
@@ -935,6 +952,29 @@ enum error api_cmd_mylistadd(int64_t size, const uint8_t *hash,
             err = ERR_API_RESP_INVALID;
         }
     }
+
+    return err;
+}
+
+enum error api_cmd_mylistmod(uint64_t lid, struct api_mylistadd_opts *opts,
+        struct api_result *res)
+{
+    char buffer[API_BUFSIZE];
+    enum error err = NOERR;
+    int send_len;
+
+    send_len = snprintf(buffer, sizeof(buffer),
+            "MYLISTADD s=%s&lid=%lu&edit=1", api_session, lid);
+    if (opts->state_set)
+        send_len += snprintf(buffer + send_len, sizeof(buffer) - send_len,
+                "&state=%hu", opts->state);
+    if (opts->watched_set)
+        send_len += snprintf(buffer + send_len, sizeof(buffer) - send_len,
+                "&viewed=%d", opts->watched);
+    if (opts->wdate_set)
+        send_len += snprintf(buffer + send_len, sizeof(buffer) - send_len,
+                "&viewdate=%ld", opts->wdate);
+    err = api_cmd_base_pref(buffer, send_len, res);
 
     return err;
 }

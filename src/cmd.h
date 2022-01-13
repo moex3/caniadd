@@ -35,4 +35,9 @@ enum error cmd_server_uptime(void *);
  */
 enum error cmd_prog_version(void *);
 
+/*
+ * Modifies a mylist entry
+ */
+enum error cmd_modify(void *data);
+
 #endif /* _CMD_H */

@@ -12,11 +12,6 @@
 #include "cache.h"
 #include "util.h"
 
-struct add_opts {
-    enum mylist_state ao_state;
-    bool ao_watched;
-};
-
 enum error cmd_add_cachecheck(const char *path, const struct stat *st,
         void *data)
 {
@@ -43,9 +38,9 @@ enum error cmd_add_apisend(const char *path, const uint8_t *hash,
         const struct stat *st, void *data)
 {
     struct api_result r;
-    struct add_opts* ao = (struct add_opts*)data;
+    struct api_mylistadd_opts *mopt = (struct api_mylistadd_opts *)data;
 
-    if (api_cmd_mylistadd(st->st_size, hash, ao->ao_state, ao->ao_watched, &r)
+    if (api_cmd_mylistadd(st->st_size, hash, mopt, &r)
             != NOERR)
         return ERR_CMD_FAILED;
 
@@ -83,13 +78,14 @@ enum error cmd_add_apisend(const char *path, const uint8_t *hash,
 
 enum error cmd_add(void *data)
 {
-    struct add_opts add_opts = {0};
+    struct api_mylistadd_opts mopt = {0};
     struct ed2k_util_opts ed2k_opts = {
         .pre_hash_fn = cmd_add_cachecheck,
         .post_hash_fn = cmd_add_apisend,
-        .data = &add_opts,
+        .data = &mopt,
     };
     bool *watched;
+    const char **wdate_str;
     enum error err = NOERR;
     int fcount;
 
@@ -99,10 +95,23 @@ enum error cmd_add(void *data)
         return ERR_CMD_ARG;
     }
 
-    if (config_get("watched", (void**)&watched) == NOERR) {
-        add_opts.ao_watched = *watched;
+    if (config_get("watched", (void**)&watched) == NOERR && *watched) {
+        mopt.watched = *watched;
+        mopt.watched_set = true;
+
+        if (config_get("wdate", (void**)&wdate_str) == NOERR) {
+            uint64_t wdate = util_iso2unix(*wdate_str);
+
+            if (wdate == 0) {
+                uio_error("Invalid time value: '%s'", *wdate_str);
+                return ERR_CMD_ARG;
+            }
+            mopt.wdate = wdate;
+            mopt.wdate_set = true;
+        }
     }
-    add_opts.ao_state = MYLIST_STATE_INTERNAL;
+    mopt.state = MYLIST_STATE_INTERNAL;
+    mopt.state_set = true;
 
     for (int i = 0; i < fcount; i++) {
         err = ed2k_util_iterpath(config_get_nonopt(i), &ed2k_opts);

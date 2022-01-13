@@ -23,6 +23,7 @@ static const struct cmd_entry ents[] = {
     { .arg_name = "uptime", .fn = cmd_server_uptime, .need_auth = true },
     { .arg_name = "ed2k", .fn = cmd_ed2k, },
     { .arg_name = "add", .fn = cmd_add, .need_auth = true, .need_cache = true, },
+    { .arg_name = "modify", .fn = cmd_modify, .need_auth = true, .need_cache = false, },
 };
 static const int32_t ents_len = sizeof(ents)/sizeof(*ents);
 

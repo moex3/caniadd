@@ -110,6 +110,10 @@ static struct conf_entry options[] = {
       .set_func = config_set_bool, .in_args = true, .in_file = true,
       .type = OTYPE_B, .handle_order = 1, .value_is_set = true, },
 
+    { .l_name = "wdate", .s_name = UCHAR_MAX + 4, .has_arg = required_argument,
+      .set_func = config_set_str, .in_args = true, 
+      .type = OTYPE_S, .handle_order = 1, },
+
     /*### cmd ###*/
 
     { .l_name = "server-version", .s_name = UCHAR_MAX + 2,
@@ -132,7 +136,11 @@ static struct conf_entry options[] = {
       .has_arg = no_argument, .set_func = config_set_bool, .in_args = true,
       .type = OTYPE_B, .handle_order = 1 },
 
-    /*{ .l_name = "stats", .s_name = UCHAR_MAX + 4,
+    { .l_name = "modify", .s_name = 'W',
+      .has_arg = no_argument, .set_func = config_set_bool, .in_args = true,
+      .type = OTYPE_B, .handle_order = 1 },
+
+    /*{ .l_name = "stats", .s_name = UCHAR_MAX + 5,
       .has_arg = no_argument, .set_func = config_set_bool, .in_args = true,
       .type = OTYPE_B, .handle_order = 1, .value_is_set = true },*/
 
