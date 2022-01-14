@@ -103,6 +103,11 @@ static enum error cmd_add_apisend(const char *path, const uint8_t *hash,
             free(x->other);
         return NOERR;
     }
+    if (r.code == APICODE_NO_SUCH_FILE) {
+        uio_error("This file does not exists in the AniDB databse: %s",
+                path);
+        return NOERR;
+    }
     if (r.code != APICODE_MYLIST_ENTRY_ADDED) {
         uio_error("Mylistadd failure: %hu", r.code);
         return ERR_CMD_FAILED;

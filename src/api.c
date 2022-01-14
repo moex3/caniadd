@@ -446,7 +446,7 @@ static void api_ratelimit_sent()
     clock_gettime(API_CLOCK, &api_last_packet);
 }
 
-static void api_ratelimit()
+static enum error api_ratelimit()
 {
     struct timespec ts = {0};
     uint64_t msdiff, mswait;
@@ -457,7 +457,7 @@ static void api_ratelimit()
     if (api_packet_count <= API_FREESEND) {
         uio_debug("This packet is for free! Yay :D (%d/%d)",
                 api_packet_count, API_FREESEND);
-        return;
+        return NOERR;
     }
 
     clock_gettime(API_CLOCK, &ts);
@@ -465,7 +465,7 @@ static void api_ratelimit()
     uio_debug("Time since last packet: %ld ms", msdiff);
 
     if (msdiff >= msrate)
-        return; /* No ratelimiting is needed */
+        return NOERR; /* No ratelimiting is needed */
 
     /* Need ratelimit, so do it here for now */
     mswait = msrate - msdiff;
@@ -473,11 +473,15 @@ static void api_ratelimit()
 
     MS_TO_TIMESPEC_L(ts, mswait);
     if (nanosleep(&ts, NULL) == -1) {
-        if (errno == EINTR)
+        if (errno == EINTR) {
             uio_error("Nanosleep got interrupted");
-        else
+            return ERR_SHOULD_EXIT;
+        } else {
             uio_error("Nanosleep failed");
+        }
     }
+
+    return NOERR;
 }
 
 /*
@@ -489,7 +493,8 @@ static ssize_t api_send(char *buffer, size_t data_len, size_t buf_size)
     ssize_t read_len;
     int en;
 
-    api_ratelimit();
+    if (api_ratelimit() == ERR_SHOULD_EXIT)
+        return -2;
     uio_debug("{Api}: Sending: %.*s", (int)data_len, buffer);
     if (api_encryption)
         data_len = api_encrypt(buffer, data_len);

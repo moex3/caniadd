@@ -40,4 +40,5 @@ make
 - After some time passes between now and cache moddate and it's not watched, then query and update it
 - Update cache entry is modify is used
 - Pretty hashing with color and progress bars and the other fancy stuff
+- Keep track of files not in AniDB. Maybe with a NULL lid?
 - Write -h page, and maybe a man page too
