@@ -24,7 +24,6 @@ struct cache_entry {
     /* free() if requested */
     char *fname;
     uint8_t ed2k[ED2K_HASH_SIZE];
-    bool watched;
     uint16_t state;
 };
 
