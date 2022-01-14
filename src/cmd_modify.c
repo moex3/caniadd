@@ -1,16 +1,41 @@
-#include <sys/stat.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdbool.h>
+#include <string.h>
 
 #include "cmd.h"
 #include "error.h"
 #include "uio.h"
 #include "api.h"
 #include "config.h"
-#include "ed2k_util.h"
 #include "cache.h"
 #include "util.h"
+
+bool did_cache_init = false;
+
+uint64_t cmd_modify_getlid(const char *str)
+{
+    uint64_t val;
+    const char *sep = strchr(str, '|');
+    struct cache_entry ce;
+    enum error err;
+
+    if (sscanf(str, "%lu", &val) != 1)
+        return 0;
+    if (!sep)
+        return val;
+
+    if (!cache_is_init()) {
+        if (cache_init() != NOERR)
+            return 0;
+        did_cache_init = true;
+    }
+
+    err = cache_get(sep + 1, val, CACHE_S_LID, &ce);
+    if (err != NOERR)
+        return 0;
+    return ce.lid;
+}
 
 enum error cmd_modify(void *data)
 {
@@ -44,11 +69,11 @@ enum error cmd_modify(void *data)
 
     for (int i = 0; i < fcount; i++) {
         struct api_result res;
-        uint64_t lid;
         const char *arg = config_get_nonopt(i);
+        uint64_t lid = cmd_modify_getlid(arg);
 
-        if (sscanf(arg, "%lu", &lid) != 1) {
-            uio_error("Argument '%s' is not an integer. Skipping", arg);
+        if (lid == 0) {
+            uio_error("Argument '%s' is not valid. Skipping", arg);
             continue;
         }
 
@@ -59,6 +84,11 @@ enum error cmd_modify(void *data)
         if (res.code == APICODE_NO_SUCH_MYLIST_ENTRY) {
             uio_error("No mylist entry with id: '%lu'", lid);
         }
+    }
+
+    if (did_cache_init) {
+        did_cache_init = false;
+        cache_free();
     }
     return err;
 }

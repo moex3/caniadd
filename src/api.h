@@ -250,9 +250,9 @@ struct api_mylistmod_result {
 struct api_result {
     uint16_t code;
     union {
-        struct api_version_result version;
-        struct api_auth_result auth;
-        struct api_uptime_result uptime;
+        e(version);
+        e(auth);
+        e(uptime);
         e(mylistadd);
         e(encrypt);
         e(mylistmod);

@@ -8,6 +8,8 @@
 #include "ed2k.h"
 #include "util.h"
 
+static bool cache_did_init = false;
+
 #define sqlite_bind_goto(smt, name, type, ...) { \
         int sb_idx = sqlite3_bind_parameter_index(smt, name); \
         if (sb_idx == 0) { \
@@ -30,11 +32,13 @@ static const char sql_create_table[] = "CREATE TABLE IF NOT EXISTS mylist ("
         "fname TEXT NOT NULL,"
         "fsize INTEGER NOT NULL,"
         "ed2k TEXT NOT NULL,"
+        "watchdate INTEGER,"
+        "state INTEGER NOT NULL,"
+        "moddate INTEGER NOT NULL DEFAULT (strftime('%s')),"
         "UNIQUE (fname, fsize) )";
 static const char sql_mylist_add[] = "INSERT INTO mylist "
-        "(lid, fname, fsize, ed2k) VALUES "
-        //"(?, ?, ?, ?)";
-        "(:lid, :fname, :fsize, :ed2k)";
+        "(lid, fname, fsize, ed2k, watchdate, state) VALUES "
+        "(:lid, :fname, :fsize, :ed2k, :watchdate, :state)";
 static const char sql_mylist_get[] = "SELECT * FROM mylist WHERE "
         "fsize=:fsize AND fname=:fname";
 
@@ -119,6 +123,7 @@ enum error cache_init()
     if (err != NOERR)
         goto fail;
 
+    cache_did_init = true;
     return NOERR;
 
 fail:
@@ -126,14 +131,21 @@ fail:
     return err;
 }
 
+bool cache_is_init()
+{
+    return cache_did_init;
+}
+
 void cache_free()
 {
+    cache_did_init = false;
     sqlite3_close(cache_db);
     uio_debug("Closed cache db");
 }
 
 enum error cache_add(uint64_t lid, const char *fname,
-        uint64_t fsize, const uint8_t *ed2k)
+        uint64_t fsize, const uint8_t *ed2k, uint64_t watchdate,
+        enum mylist_state state)
 {
     char ed2k_str[ED2K_HASH_SIZE * 2 + 1];
     sqlite3_stmt *smt;
@@ -153,6 +165,8 @@ enum error cache_add(uint64_t lid, const char *fname,
     sqlite_bind_goto(smt, ":fname", text, fname, -1, SQLITE_STATIC);
     sqlite_bind_goto(smt, ":fsize", int64, fsize);
     sqlite_bind_goto(smt, ":ed2k", text, ed2k_str, -1, SQLITE_STATIC);
+    sqlite_bind_goto(smt, ":watchdate", int64, watchdate);
+    sqlite_bind_goto(smt, ":state", int64, state);
 
     sret = sqlite3_step(smt);
     if (sret != SQLITE_DONE) {
@@ -174,7 +188,7 @@ fail:
     
 }
 
-enum error cache_get(const char *fname, uint64_t fsize,
+enum error cache_get(const char *fname, uint64_t fsize, enum cache_select sel,
         struct cache_entry *out_ce)
 {
     sqlite3_stmt *smt;
@@ -195,14 +209,45 @@ enum error cache_get(const char *fname, uint64_t fsize,
     if (sret == SQLITE_DONE) {
         uio_debug("Cache entry with size (%lu) and name (%s) not found", fsize, fname);
         err = ERR_CACHE_NO_EXISTS;
+        goto fail;
     } else if (sret == SQLITE_ROW) {
         uio_debug("Found Cache entry with size (%lu) and name (%s)", fsize, fname);
     } else {
         uio_error("sqlite_step failed: %s", sqlite3_errmsg(cache_db));
         err = ERR_CACHE_SQLITE;
+        goto fail;
     }
-    
+
+    if (!out_ce)
+        goto end;
+    if (sel == 0)
+        sel = 0xFFFFFFFF;
+
+    if (sel & CACHE_S_LID)
+        out_ce->lid = sqlite3_column_int64(smt, 0);
+    if (sel & CACHE_S_FNAME)
+        out_ce->fname = strdup((const char *)sqlite3_column_text(smt, 1));
+    if (sel & CACHE_S_FSIZE)
+        out_ce->fsize = sqlite3_column_int64(smt, 2);
+    if (sel & CACHE_S_ED2K) {
+        const char *txt = (const char *)sqlite3_column_text(smt, 3);
+
+        util_hex2byte(txt, out_ce->ed2k);
+    }
+    if (sel & CACHE_S_WATCHDATE)
+        out_ce->wdate = sqlite3_column_int64(smt, 4);
+    if (sel & CACHE_S_STATE)
+        out_ce->state = sqlite3_column_int(smt, 5);
+    if (sel & CACHE_S_MODDATE)
+        out_ce->moddate = sqlite3_column_int64(smt, 6);
+
+end:
 fail:
     sqlite3_finalize(smt);
     return err;
+}
+
+bool cache_exists(const char *fname, uint64_t size)
+{
+    return cache_get(fname, size, 0, NULL) == NOERR;
 }

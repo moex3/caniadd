@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdbool.h>
+#include <time.h>
 
 #include "cmd.h"
 #include "error.h"
@@ -18,7 +19,7 @@ enum error cmd_add_cachecheck(const char *path, const struct stat *st,
     const char *bname = util_basename(path);
     enum error err;
 
-    err = cache_get(bname, st->st_size, NULL);
+    err = cache_get(bname, st->st_size, 0, NULL);
     if (err == NOERR) {
         /* We could get the entry, so it exists already */
         uio_user("This file (%s) with size (%lu) already exists in cache."
@@ -54,7 +55,8 @@ enum error cmd_add_apisend(const char *path, const uint8_t *hash,
                 x->lid, x->fid, x->eid, x->aid, x->gid, x->date, x->viewdate,
                 x->state, x->filestate, x->storage, x->source, x->other);
 
-        cache_add(x->lid, util_basename(path), st->st_size, hash);
+        cache_add(x->lid, util_basename(path), st->st_size, hash, x->viewdate,
+                x->state);
 
         if (x->storage)
             free(x->storage);
@@ -71,7 +73,17 @@ enum error cmd_add_apisend(const char *path, const uint8_t *hash,
 
     uio_user("Succesfully added!");
     uio_debug("New mylist id is: %ld", r.mylistadd.new_id);
-    cache_add(r.mylistadd.new_id, util_basename(path), st->st_size, hash);
+
+    uint64_t wdate = 0;
+    if (mopt->watched_set && mopt->watched) {
+        if (mopt->wdate_set)
+            wdate = mopt->wdate;
+        else
+            wdate = time(NULL);
+    }
+
+    cache_add(r.mylistadd.new_id, util_basename(path), st->st_size, hash,
+            wdate, mopt->state_set ? mopt->state : MYLIST_STATE_INTERNAL);
 
     return NOERR;
 }

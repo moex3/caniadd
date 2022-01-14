@@ -16,6 +16,30 @@ void util_byte2hex(const uint8_t* bytes, size_t bytes_len,
     *out = '\0';
 }
 
+void util_hex2byte(const char *str, uint8_t* out_bytes)
+{
+    while (*str) {
+        if (*str >= '0' && *str <= '9')
+            *out_bytes = (*str - '0') << 4;
+        if (*str >= 'A' && *str <= 'F')
+            *out_bytes = (*str - ('A' - 10)) << 4;
+        else
+            *out_bytes = (*str - ('a' - 10)) << 4;
+
+        str++;
+
+        if (*str >= '0' && *str <= '9')
+            *out_bytes |= (*str - '0');
+        if (*str >= 'A' && *str <= 'F')
+            *out_bytes |= (*str - ('A' - 10));
+        else
+            *out_bytes |= (*str - ('a' - 10));
+
+        out_bytes++;
+        str++;
+    }
+}
+
 const char *util_get_home()
 {
     const char *home_env = getenv("HOME");

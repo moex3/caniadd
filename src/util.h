@@ -21,6 +21,8 @@
 void util_byte2hex(const uint8_t* bytes, size_t bytes_len,
         bool uppercase, char* out);
 
+/* And convert it back */
+void util_hex2byte(const char *str, uint8_t* out_bytes);
 /*
  * Return the user's home directory
  */

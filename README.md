@@ -37,4 +37,7 @@ make
 - Handle C-c gracefully at any time
 - Rework cmd line args
   - Should be multiple 'menus' like `caniadd add [paths...]`, `caniadd uptime`, `caniadd watched`...
+- After some time passes between now and cache moddate and it's not watched, then query and update it
+- Update cache entry is modify is used
+- Pretty hashing with color and progress bars and the other fancy stuff
 - Write -h page, and maybe a man page too
