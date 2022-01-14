@@ -880,6 +880,44 @@ enum error api_cmd_uptime(struct api_result *res)
     return err;
 }
 
+static enum error api_cmd_mylist_resp_parse(const char *buffer,
+        struct api_mylist_result *mr)
+{
+    /* {int4 lid}|{int4 fid}|{int4 eid}|{int4 aid}|{int4 gid}|
+     * {int4 date}|{int2 state}|{int4 viewdate}|{str storage}|
+     * {str source}|{str other}|{int2 filestate} */
+
+    int fc; /* the Freedom Club */
+    char *ls;
+    size_t ll;
+    enum error err = NOERR;
+    bool glr = api_get_line(buffer, 2, &ls, &ll);
+    assert(glr);
+    assert(ll < API_BUFSIZE - 1);
+    (void)glr;
+
+    fc = api_field_parse(ls,
+            "%Lu", &mr->lid, "%Lu", &mr->fid, "%Lu", &mr->eid,
+            "%Lu", &mr->aid, "%Lu", &mr->gid, "%Lu", &mr->date,
+            "%hu", &mr->state, "%Lu", &mr->viewdate, "%s", &mr->storage,
+            "%s", &mr->source, "%s", &mr->other, "%hu", &mr->filestate,
+            NULL);
+
+    uio_debug("Fc is: %d", fc);
+    if (fc != 12) {
+        if (fc >= 9)
+            free(mr->storage);
+        if (fc >= 10)
+            free(mr->source);
+        if (fc >= 11)
+            free(mr->other);
+        uio_error("Scanf only parsed %d", fc);
+        err = ERR_API_RESP_INVALID;
+    }
+
+    return err;
+}
+
 enum error api_cmd_mylistadd(int64_t size, const uint8_t *hash,
         struct api_mylistadd_opts *opts, struct api_result *res)
 {
@@ -921,37 +959,23 @@ enum error api_cmd_mylistadd(int64_t size, const uint8_t *hash,
          * that page may be a little out of date (or they just
          * expect us to use common sense lmao */
     } else if (res->code == APICODE_FILE_ALREADY_IN_MYLIST) {
-        /* {int4 lid}|{int4 fid}|{int4 eid}|{int4 aid}|{int4 gid}|
-         * {int4 date}|{int2 state}|{int4 viewdate}|{str storage}|
-         * {str source}|{str other}|{int2 filestate} */
-        int fc; /* the Freedom Club */
-        char *ls;
-        size_t ll;
-        struct api_mylistadd_result *mr = &res->mylistadd;
-        bool glr = api_get_line(buffer, 2, &ls, &ll);
-        assert(glr);
-        assert(ll < API_BUFSIZE - 1);
-        (void)glr;
-
-        fc = api_field_parse(ls,
-                "%Lu", &mr->lid, "%Lu", &mr->fid, "%Lu", &mr->eid,
-                "%Lu", &mr->aid, "%Lu", &mr->gid, "%Lu", &mr->date,
-                "%hu", &mr->state, "%Lu", &mr->viewdate, "%s", &mr->storage,
-                "%s", &mr->source, "%s", &mr->other, "%hu", &mr->filestate,
-                NULL);
-
-        uio_debug("Fc is: %d", fc);
-        if (fc != 12) {
-            if (fc >= 9)
-                free(mr->storage);
-            if (fc >= 10)
-                free(mr->source);
-            if (fc >= 11)
-                free(mr->other);
-            uio_error("Scanf only parsed %d", fc);
-            err = ERR_API_RESP_INVALID;
-        }
+        err = api_cmd_mylist_resp_parse(buffer, &res->mylist);
     }
+
+    return err;
+}
+
+enum error api_cmd_mylist(uint64_t lid, struct api_result *res)
+{
+    char buffer[API_BUFSIZE];
+    enum error err = NOERR;
+    
+    err = api_cmd_base(buffer, res, "MYLIST s=%s&lid=%lu", api_session, lid);
+    if (err != NOERR)
+        return err;
+
+    if (res->code == APICODE_MYLIST)
+        err = api_cmd_mylist_resp_parse(buffer, &res->mylist);
 
     return err;
 }

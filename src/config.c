@@ -137,8 +137,8 @@ static struct conf_entry options[] = {
       .type = OTYPE_B, .handle_order = 1 },
 
     /* Arguments are either mylist id's, or file sizes and names
-     *  in the format '<size>|<filename>'. The filename can contain
-     *  '|' characters */
+     *  in the format '[watch_date/]<size>/<filename>'. The filename can't contain
+     *  '/' characters.  */
     { .l_name = "modify", .s_name = 'W',
       .has_arg = no_argument, .set_func = config_set_bool, .in_args = true,
       .type = OTYPE_B, .handle_order = 1 },

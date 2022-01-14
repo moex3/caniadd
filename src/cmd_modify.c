@@ -13,16 +13,38 @@
 
 bool did_cache_init = false;
 
-uint64_t cmd_modify_getlid(const char *str)
+uint64_t cmd_modify_arg_parse(const char *str, uint64_t *out_wdate)
 {
     uint64_t val;
-    const char *sep = strchr(str, '|');
     struct cache_entry ce;
     enum error err;
+    const char *fn_st = strrchr(str, '/');
+    const char *size_st = strchr(str, '/');
 
-    if (sscanf(str, "%lu", &val) != 1)
+    *out_wdate = 0;
+
+    /* Skip the '/' */
+    if (fn_st)
+        fn_st++;
+    if (size_st)
+        size_st++;
+
+    if (fn_st == size_st) {
+        /* size/filename format */
+        size_st = str;
+    } else {
+        size_t timelen = size_st - str - 1; /* -1 for the skipped '/' */
+        char timstr[timelen + 1];
+
+        memcpy(timstr, str, timelen);
+        timstr[timelen] = '\0';
+
+        *out_wdate = util_iso2unix(timstr);
+    }
+
+    if (sscanf(size_st, "%lu", &val) != 1)
         return 0;
-    if (!sep)
+    if (!fn_st && !size_st) /* Only lid format */
         return val;
 
     if (!cache_is_init()) {
@@ -31,7 +53,7 @@ uint64_t cmd_modify_getlid(const char *str)
         did_cache_init = true;
     }
 
-    err = cache_get(sep + 1, val, CACHE_S_LID, &ce);
+    err = cache_get(fn_st, val, CACHE_S_LID, &ce);
     if (err != NOERR)
         return 0;
     return ce.lid;
@@ -69,21 +91,42 @@ enum error cmd_modify(void *data)
 
     for (int i = 0; i < fcount; i++) {
         struct api_result res;
+        struct api_mylistadd_opts l_opts = mopt;
         const char *arg = config_get_nonopt(i);
-        uint64_t lid = cmd_modify_getlid(arg);
+        uint64_t wdate;
+        uint64_t lid = cmd_modify_arg_parse(arg, &wdate);
 
         if (lid == 0) {
             uio_error("Argument '%s' is not valid. Skipping", arg);
             continue;
         }
 
-        err = api_cmd_mylistmod(lid, &mopt, &res);
+        if (wdate != 0) {
+            l_opts.watched = true;
+            l_opts.watched_set = true;
+
+            l_opts.wdate = wdate;
+            l_opts.wdate_set = true;
+        }
+
+        err = api_cmd_mylistmod(lid, &l_opts, &res);
         if (err != NOERR)
             break;
 
         if (res.code == APICODE_NO_SUCH_MYLIST_ENTRY) {
             uio_error("No mylist entry with id: '%lu'", lid);
+            continue;
         }
+        
+        if (!cache_is_init()) {
+            if ((err = cache_init()) != NOERR)
+                return err;
+            did_cache_init = true;
+        }
+
+        err = cache_update(lid, &l_opts);
+        if (err != NOERR)
+            break;
     }
 
     if (did_cache_init) {

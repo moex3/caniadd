@@ -13,10 +13,9 @@ enum cache_select {
     CACHE_S_FNAME = 1 << 1,
     CACHE_S_FSIZE = 1 << 2,
     CACHE_S_ED2K = 1 << 3,
-    CACHE_S_WATCHED = 1 << 4,
-    CACHE_S_WATCHDATE = 1 << 5,
-    CACHE_S_STATE = 1 << 6,
-    CACHE_S_MODDATE = 1 << 7,
+    CACHE_S_WATCHDATE = 1 << 4,
+    CACHE_S_STATE = 1 << 5,
+    CACHE_S_MODDATE = 1 << 6,
 };
 
 struct cache_entry {
@@ -50,9 +49,9 @@ enum error cache_add(uint64_t lid, const char *fname,
         enum mylist_state state);
 
 /*
- * Update an already existing cache entry
+ * Update an already existing cache entry by lid
  */
-enum error cache_update();
+enum error cache_update(uint64_t lid, const struct api_mylistadd_opts *mods);
 
 /*
  * Get a cache entry

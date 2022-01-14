@@ -41,6 +41,9 @@ static const char sql_mylist_add[] = "INSERT INTO mylist "
         "(:lid, :fname, :fsize, :ed2k, :watchdate, :state)";
 static const char sql_mylist_get[] = "SELECT * FROM mylist WHERE "
         "fsize=:fsize AND fname=:fname";
+static const char sql_mylist_update[] = "UPDATE mylist "
+        "SET %s "
+        "WHERE lid=:lid";
 
 
 #if 0
@@ -242,6 +245,89 @@ enum error cache_get(const char *fname, uint64_t fsize, enum cache_select sel,
         out_ce->moddate = sqlite3_column_int64(smt, 6);
 
 end:
+fail:
+    sqlite3_finalize(smt);
+    return err;
+}
+
+static size_t cache_update_sqlprep_set(char *out, size_t out_size,
+        const struct api_mylistadd_opts *mods)
+{
+    size_t wr = 0;
+
+    if (mods->state_set)
+        wr += snprintf(out + wr, out ? out_size - wr : 0, "%s, ",
+                "state = :state");
+
+    if (mods->watched_set) {
+        if (!mods->watched)
+            wr += snprintf(out + wr, out ? out_size - wr : 0, "%s, ",
+                    "watchdate = 0");
+        else if (mods->wdate_set)
+            wr += snprintf(out + wr, out ? out_size - wr : 0,
+                    "%s, ", "watchdate = :watchdate");
+        else
+            wr += snprintf(out + wr, out ? out_size - wr : 0, "%s, ",
+                    "watchdate = strftime('%s')");
+    }
+
+    wr += snprintf(out + wr, out ? out_size - wr : 0, "%s",
+            "moddate = strftime('%s')");
+
+    return wr;
+}
+
+
+static size_t cache_update_sqlprep(char *out,
+        const struct api_mylistadd_opts *mods)
+{
+    size_t wr = cache_update_sqlprep_set(NULL, 0, mods);
+    if (!out)
+        return snprintf(NULL, 0, sql_mylist_update, "") + wr;
+
+    char set_str[wr + 1];
+    cache_update_sqlprep_set(set_str, wr + 1, mods);
+
+    return sprintf(out, sql_mylist_update, (char*)set_str);
+}
+
+enum error cache_update(uint64_t lid, const struct api_mylistadd_opts *mods)
+{
+    sqlite3_stmt *smt;
+    int sret;
+    enum error err = NOERR;
+    size_t sql_len = cache_update_sqlprep(NULL, mods);
+    char sql[sql_len + 1];
+
+    cache_update_sqlprep(sql, mods);
+    uio_debug("Update sql: '%s'", sql);
+
+    sret = sqlite3_prepare_v2(cache_db, sql,
+            sql_len, &smt, NULL);
+    if (sret != SQLITE_OK) {
+        uio_error("Cannot prepare statement: %s", sqlite3_errmsg(cache_db));
+        return ERR_CACHE_SQLITE;
+    }
+
+    sqlite_bind_goto(smt, ":lid", int64, lid);
+
+    if (mods->state_set) {
+        sqlite_bind_goto(smt, ":state", int, mods->state);
+    }
+    if (mods->watched_set && mods->wdate_set) {
+        sqlite_bind_goto(smt, ":watchdate", int64, mods->wdate);
+    }
+
+    sret = sqlite3_step(smt);
+    if (sret == SQLITE_DONE) {
+        uio_debug("Cache entry (%lu) succesfully updated", lid);
+    } else {
+        uio_error("sqlite_step failed: %s", sqlite3_errmsg(cache_db));
+        err = ERR_CACHE_SQLITE;
+        goto fail;
+    }
+
+
 fail:
     sqlite3_finalize(smt);
     return err;

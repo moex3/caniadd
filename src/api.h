@@ -230,17 +230,15 @@ struct api_encrypt_result {
 struct api_uptime_result {
     int32_t ms;
 };
+struct api_mylist_result {
+    uint64_t lid, fid, eid, aid, gid, date, viewdate;
+    /* free() if != NULL ofc */
+    char *storage, *source, *other;
+    enum mylist_state state;
+    enum file_state filestate;
+};
 struct api_mylistadd_result {
-    union {
-        uint64_t new_id;
-        struct {
-            uint64_t lid, fid, eid, aid, gid, date, viewdate;
-            /* free() if != NULL ofc */
-            char *storage, *source, *other;
-            enum mylist_state state;
-            enum file_state filestate;
-        };
-    };
+    uint64_t new_id;
 };
 struct api_mylistmod_result {
     uint32_t n_edits;
@@ -253,6 +251,7 @@ struct api_result {
         e(version);
         e(auth);
         e(uptime);
+        e(mylist);
         e(mylistadd);
         e(encrypt);
         e(mylistmod);
@@ -265,6 +264,7 @@ void api_free();
 
 enum error api_cmd_version(struct api_result *res);
 enum error api_cmd_uptime(struct api_result *res);
+enum error api_cmd_mylist(uint64_t lid, struct api_result *res);
 enum error api_cmd_mylistadd(int64_t size, const uint8_t *hash,
         struct api_mylistadd_opts *opts, struct api_result *res);
 enum error api_cmd_mylistmod(uint64_t lid, struct api_mylistadd_opts *opts,
