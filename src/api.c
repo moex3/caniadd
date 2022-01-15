@@ -473,12 +473,10 @@ static enum error api_ratelimit()
 
     MS_TO_TIMESPEC_L(ts, mswait);
     if (nanosleep(&ts, NULL) == -1) {
-        if (errno == EINTR) {
-            uio_error("Nanosleep got interrupted");
+        if (errno == EINTR && should_exit)
             return ERR_SHOULD_EXIT;
-        } else {
-            uio_error("Nanosleep failed");
-        }
+        else
+            uio_error("Nanosleep failed: %s", strerror(errno));
     }
 
     return NOERR;
@@ -694,7 +692,13 @@ static enum error api_cmd_base_pref(char buffer[API_BUFSIZE], int send_len,
     while (retry_count < API_MAX_TRYAGAIN &&
             api_g_retry_count < API_MAX_TRYAGAIN) {
         long code;
-        ssize_t res_len = api_send(buffer, send_len, API_BUFSIZE);
+        char l_buff[API_BUFSIZE];
+        ssize_t res_len;
+
+        /* Need the copy because the response will be written here too,
+         * and we will send the response back when retrying */
+        memcpy(l_buff, buffer, send_len);
+        res_len = api_send(buffer, send_len, API_BUFSIZE);
 
         if (res_len < 0) {
             if (res_len == -2 && should_exit)
@@ -726,6 +730,8 @@ static enum error api_cmd_base_pref(char buffer[API_BUFSIZE], int send_len,
                     goto end;
                 }
             }
+            /* Copy the saved command back */
+            memcpy(buffer, l_buff, send_len);
             continue;
         }
 
@@ -735,8 +741,10 @@ static enum error api_cmd_base_pref(char buffer[API_BUFSIZE], int send_len,
                 uio_debug("Let's try loggin in agane");
                 api_authed = false; /* We got logged out probably */
                 err = api_auth(); /* -> will call this function */
-                if (api_g_retry_count < API_MAX_TRYAGAIN)
+                if (api_g_retry_count < API_MAX_TRYAGAIN) {
+                    memcpy(buffer, l_buff, send_len);
                     continue;
+                }
             }
             break;
         }
