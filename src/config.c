@@ -38,7 +38,8 @@ static int config_set_bool(struct conf_entry *ce, char *arg);
 static struct conf_entry options[] = {
     { .l_name = "help", .s_name = 'h', .has_arg = no_argument,
         .action_func = show_help, .in_args = true,
-        .type = OTYPE_ACTION, .handle_order = 0 },
+        .type = OTYPE_ACTION, .handle_order = 0,
+        .h_desc = "Display the help and exit", },
 /*
     { .l_name = "config-dir", .s_name = 'b', .has_arg = required_argument,
         .default_func = config_def_config_dir, .set_func = config_set_str,
@@ -66,82 +67,100 @@ static struct conf_entry options[] = {
 
     { .l_name = "username", .s_name = 'u', .has_arg = required_argument,
       .set_func = config_set_str, .in_args = true, .in_file = true,
-      .type = OTYPE_S, .handle_order = 1 },
+      .type = OTYPE_S, .handle_order = 1,
+      .h_desc = "Sets the username for the login", },
 
     { .l_name = "password", .s_name = 'p', .has_arg = required_argument,
       .set_func = config_set_str, .in_args = true, .in_file = true,
-      .type = OTYPE_S, .handle_order = 1 },
+      .type = OTYPE_S, .handle_order = 1,
+      .h_desc = "Sets the password for the login", },
 
     { .l_name = "port", .s_name = 'P', .has_arg = required_argument,
       .set_func = config_set_port, .in_args = true, .in_file = true,
       .type = OTYPE_HU, .handle_order = 1, .value.hu = 29937,
-      .value_is_set = true },
+      .value_is_set = true,
+      .h_desc = "Sets port to use for API server communication", },
 
     { .l_name = "api-server", .s_name = UCHAR_MAX + 1, .has_arg = required_argument,
       .set_func = config_set_str, .in_args = true, .in_file = true,
       .type = OTYPE_S, .handle_order = 1, .value.s = "api.anidb.net:9000",
-      .value_is_set = true },
+      .value_is_set = true,
+      .h_desc = "Sets the API server address", },
 
     { .l_name = "api-key", .s_name = 'k', .has_arg = required_argument,
       .set_func = config_set_str, .in_args = true, .in_file = true,
-      .type = OTYPE_S, .handle_order = 1, },
+      .type = OTYPE_S, .handle_order = 1,
+      .h_desc = "Sets the api key used for encryption", },
 
     { .l_name = "save-session", .s_name = 's', .has_arg = no_argument,
       .set_func = config_set_bool, .in_args = true, .in_file = true,
-      .type = OTYPE_B, .handle_order = 1, .value_is_set = true },
+      .type = OTYPE_B, .handle_order = 1, .value_is_set = true,
+      .h_desc = "not implemented", },
 
     { .l_name = "destroy-session", .s_name = 'S', .has_arg = no_argument,
       .set_func = config_set_bool, .in_args = true, .in_file = false,
-      .type = OTYPE_B, .handle_order = 1, .value_is_set = true },
+      .type = OTYPE_B, .handle_order = 1, .value_is_set = true,
+      .h_desc = "not implemented", },
 
     { .l_name = "watched", .s_name = 'w', .has_arg = no_argument,
       .set_func = config_set_bool, .in_args = true,
-      .type = OTYPE_B, .handle_order = 1, .value_is_set = true },
+      .type = OTYPE_B, .handle_order = 1, .value_is_set = true,
+      .h_desc = "Mark the episode as watched when adding files", },
 
     { .l_name = "link", .s_name = 'l', .has_arg = no_argument,
       .set_func = config_set_bool, .in_args = true,
-      .type = OTYPE_B, .handle_order = 1, .value_is_set = true },
+      .type = OTYPE_B, .handle_order = 1, .value_is_set = true,
+      .h_desc = "Print an ed2k link when running the ed2k command", },
 
     { .l_name = "cachedb", .s_name = 'd', .has_arg = required_argument,
       .set_func = config_set_str, .in_args = true, .in_file = true,
-      .type = OTYPE_S, .handle_order = 1, /*.default_func = config_def_cachedb*/ },
+      .type = OTYPE_S, .handle_order = 1, /*.default_func = config_def_cachedb*/
+      .h_desc = "Sets the path for the cache database", },
 
     { .l_name = "debug", .s_name = 'D', .has_arg = no_argument,
       .set_func = config_set_bool, .in_args = true, .in_file = true,
-      .type = OTYPE_B, .handle_order = 1, .value_is_set = true, },
+      .type = OTYPE_B, .handle_order = 1, .value_is_set = true,
+      .h_desc = "Enable debug output", },
 
     { .l_name = "wdate", .s_name = UCHAR_MAX + 4, .has_arg = required_argument,
       .set_func = config_set_str, .in_args = true, 
-      .type = OTYPE_S, .handle_order = 1, },
+      .type = OTYPE_S, .handle_order = 1,
+      .h_desc = "Set the watched date when adding files", },
 
     /*### cmd ###*/
 
     { .l_name = "server-version", .s_name = UCHAR_MAX + 2,
       .has_arg = no_argument, .set_func = config_set_bool, .in_args = true,
-      .type = OTYPE_B, .handle_order = 1, .value_is_set = true },
+      .type = OTYPE_B, .handle_order = 1, .value_is_set = true,
+      .h_desc = "CMD: Request the server version", },
 
     { .l_name = "version", .s_name = 'v',
       .has_arg = no_argument, .set_func = config_set_bool, .in_args = true,
-      .type = OTYPE_B, .handle_order = 1, .value_is_set = true },
+      .type = OTYPE_B, .handle_order = 1, .value_is_set = true,
+      .h_desc = "CMD: Print the caniadd version", },
 
     { .l_name = "uptime", .s_name = UCHAR_MAX + 3,
       .has_arg = no_argument, .set_func = config_set_bool, .in_args = true,
-      .type = OTYPE_B, .handle_order = 1, .value_is_set = true },
+      .type = OTYPE_B, .handle_order = 1, .value_is_set = true,
+      .h_desc = "CMD: Request the uptime of the api servers", },
 
     { .l_name = "ed2k", .s_name = 'e',
       .has_arg = no_argument, .set_func = config_set_bool, .in_args = true,
-      .type = OTYPE_B, .handle_order = 1 },
+      .type = OTYPE_B, .handle_order = 1,
+      .h_desc = "CMD: Run an ed2k hash on the file arguments", },
 
     { .l_name = "add", .s_name = 'a',
       .has_arg = no_argument, .set_func = config_set_bool, .in_args = true,
-      .type = OTYPE_B, .handle_order = 1 },
+      .type = OTYPE_B, .handle_order = 1,
+      .h_desc = "CMD: Add files to your anidb list", },
 
     /* Arguments are either mylist id's, or file sizes and names
      *  in the format '[watch_date/]<size>/<filename>'. The filename can't contain
      *  '/' characters.  */
     { .l_name = "modify", .s_name = 'W',
       .has_arg = no_argument, .set_func = config_set_bool, .in_args = true,
-      .type = OTYPE_B, .handle_order = 1 },
+      .type = OTYPE_B, .handle_order = 1,
+      .h_desc = "CMD: Modify files in your anidb list", },
 
     /*{ .l_name = "stats", .s_name = UCHAR_MAX + 5,
       .has_arg = no_argument, .set_func = config_set_bool, .in_args = true,
@@ -367,7 +386,40 @@ static int config_set_bool(struct conf_entry *ce, char *arg)
 
 static int show_help(struct conf_entry *ce)
 {
-    printf("Todo...\n");
+    printf(
+            "Usage: caniadd [OPTION]...\n"
+            "Caniadd will add files to an AniDB list, and possibly more.\n"
+            "\n"
+            "OPTIONS:\n"
+    );
+    for (size_t i = 0; i < options_count; i++) {
+        int printed = 0, pad;
+
+        printed += printf("    ");
+
+        if (options[i].l_name)
+            printed += printf("--%s", options[i].l_name);
+        if (options[i].s_name < UCHAR_MAX)
+            printed += printf(", -%c", options[i].s_name);
+        if (options[i].has_arg != no_argument)
+            printed += printf(" arg");
+
+        pad = 25 - printed;
+        if (pad <= 0)
+            pad = 1;
+
+        printf("%*s%s", pad, "", options[i].h_desc);
+        if (options[i].value_is_set) {
+            printf(" Def: ");
+            if (options[i].type == OTYPE_S)
+                printed += printf("%s", options[i].value.s);
+            else if (options[i].type == OTYPE_HU)
+                printed += printf("%hu", options[i].value.hu);
+            else if (options[i].type == OTYPE_B)
+                printed += printf("%s", options[i].value.b ? "true" : "false");
+        }
+        printf("\n");
+    }
     return ERR_OPT_EXIT;
 }
 
