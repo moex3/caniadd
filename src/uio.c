@@ -20,9 +20,9 @@ void uio_error(const char *format, ...)
     va_list ap;
     va_start(ap, format);
     
-    printf("\033[31m[ERROR]: ");
-    vprintf(format, ap);
-    printf("\033[0m\n");
+    fprintf(stderr, "\033[31m[ERROR]: ");
+    vfprintf(stderr, format, ap);
+    fprintf(stderr, "\033[0m\n");
 
     va_end(ap);
 }
@@ -38,9 +38,9 @@ void uio_debug(const char *format, ...)
 
     va_start(ap, format);
     
-    printf("\033[35m[DEBUG]: ");
-    vprintf(format, ap);
-    printf("\033[0m\n");
+    fprintf(stderr, "\033[35m[DEBUG]: ");
+    vfprintf(stderr, format, ap);
+    fprintf(stderr, "\033[0m\n");
 
     va_end(ap);
 }
