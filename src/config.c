@@ -62,12 +62,12 @@ static struct conf_entry modify_add_subopts[] = {
     { .l_name = "watched", .s_name = 'w', .has_arg = no_argument,
       .set_func = config_set_bool, .in_args = true,
       .type = OTYPE_B, .handle_order = 0, .value_is_set = true,
-      .h_desc = "Mark the episode as watched when adding files", },
+      .h_desc = "Mark the episode as watched when adding/modifying files", },
 
     { .l_name = "wdate", .s_name = UCHAR_MAX + 4, .has_arg = required_argument,
       .set_func = config_set_str, .in_args = true, 
       .type = OTYPE_S, .handle_order = 0,
-      .h_desc = "Set the watched date when adding files", },
+      .h_desc = "Set the watched date when adding/modifying files", },
 };
 
 static struct conf_entry options[] = {
@@ -164,6 +164,9 @@ static struct conf_entry options[] = {
       .has_arg = no_argument, .set_func = config_set_bool, .in_args = true,
       .type = OTYPE_SUBCOMMAND, .handle_order = 1,
       .h_desc = "Modify files in your anidb list",
+      .h_desc_more =
+          "The arguments are either mylist id's, a file/folder path, or file sizes and names\n"
+          "in the format '[watch_date/]<size>/<filename>'. The filename can't contain '/' characters\n",
       .subopts = modify_add_subopts,
       .subopts_count = sizeof(modify_add_subopts) / sizeof(modify_add_subopts[0]),
     },
@@ -225,7 +228,8 @@ static int config_read_args(int argc, char **argv,
         char sopt[opts_count * 2 + 1], struct option lopt[opts_count + 1], int level)
 {
     int optc, err = NOERR;
-    optind = 1;
+    /* Reinitialize getopt with 0 here */
+    optind = 0;
 
     //uio_debug("Before %d %s", argc, argv[0]);
     while ((optc = getopt_long(argc, argv, sopt,
@@ -479,10 +483,12 @@ static int show_subcomm_help(struct conf_entry *ce)
     printf(
             "Usage: caniadd [OPTIONS] %s [SUBCOMMAND_OPTIONS]\n"
             "%s\n"
+            "%s"
             "\n"
             "SUBCOMMAND_OPTIONS:\n",
             current_subcommand->l_name,
-            current_subcommand->h_desc
+            current_subcommand->h_desc,
+            current_subcommand->h_desc_more ? current_subcommand->h_desc_more : ""
     );
 
     for (size_t i = 0; i < current_subcommand->subopts_count; i++) {

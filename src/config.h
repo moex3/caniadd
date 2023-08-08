@@ -50,6 +50,7 @@ struct conf_entry {
     const char *l_name; /* The long name for the option, or for the config file */
     int s_name; /* Short option name */
     const char *h_desc; /* Description for the help screen */
+    const char *h_desc_more; /* More description for the help screen */
     union { /* Value of the param */
         char *s;
         uint16_t hu;
