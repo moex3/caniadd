@@ -40,5 +40,6 @@ enum error cmd_prog_version(void *);
  * Modifies a mylist entry
  */
 enum error cmd_modify(void *data);
+enum error cmd_modify_argcheck();
 
 #endif /* _CMD_H */

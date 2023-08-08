@@ -67,7 +67,7 @@ static struct conf_entry modify_add_subopts[] = {
     { .l_name = "wdate", .s_name = UCHAR_MAX + 4, .has_arg = required_argument,
       .set_func = config_set_str, .in_args = true, 
       .type = OTYPE_S, .handle_order = 0,
-      .h_desc = "Set the watched date when adding/modifying files", },
+      .h_desc = "Set the watched date when adding/modifying files. Either in unix time or in YY-MM-DDTHH:MM:SS", },
 };
 
 static struct conf_entry options[] = {

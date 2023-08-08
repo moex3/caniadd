@@ -63,4 +63,5 @@ uint64_t util_iso2unix(const char *isotime);
 typedef enum error (*util_itercb)(const char *path, const struct stat *fstat, void *data);
 enum error util_iterpath(const char *path, util_itercb cb, void *data);
 
+
 #endif /* _UTIL_H */
