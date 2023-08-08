@@ -35,8 +35,6 @@ make
   - If file is not found at a scan
 - Buffer up mylistadd api cmds when waiting for ratelimit
 - Handle C-c gracefully at any time
-- Rework cmd line args
-  - Should be multiple 'menus' like `caniadd add [paths...]`, `caniadd uptime`, `caniadd watched`...
 - After some time passes between now and cache moddate and it's not watched, then query and update it
 - Update cache entry is modify is used
 - Pretty hashing with color and progress bars and the other fancy stuff
