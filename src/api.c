@@ -719,10 +719,16 @@ static enum error api_cmd_base_pref(char buffer[API_BUFSIZE], int send_len,
         if (err == ERR_API_OOS || err == ERR_API_SRV_BUSY ||
                 err == ERR_API_TIMEOUT) {
             struct timespec ts;
+            time_t wait_ms = API_TRYAGAIN_TIME;
 
-            MS_TO_TIMESPEC_L(ts, API_TRYAGAIN_TIME);
+            if (err == ERR_API_OOS) {
+                /* In this case, we should wait 30 minutes as per the wiki */
+                wait_ms = 30 * 60 * 1000;
+            }
+
+            MS_TO_TIMESPEC_L(ts, wait_ms);
             retry_count++;
-            uio_debug("Retry after %ld ms (%d/%d)", API_TRYAGAIN_TIME,
+            uio_debug("Retry after %ld ms (%d/%d)", wait_ms,
                     retry_count, API_MAX_TRYAGAIN);
             if (nanosleep(&ts, NULL) == -1) {
                 if (errno == EINTR && should_exit) {
