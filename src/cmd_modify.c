@@ -73,11 +73,11 @@ enum error cmd_modify(void *data)
         return ERR_CMD_ARG;
     }
 
-    if (config_get("watched", (void**)&watched) == NOERR && *watched) {
+    if (config_get_subopt("modify", "watched", (void**)&watched) == NOERR && *watched) {
         mopt.watched = *watched;
         mopt.watched_set = true;
 
-        if (config_get("wdate", (void**)&wdate_str) == NOERR) {
+        if (config_get_subopt("modify", "wdate", (void**)&wdate_str) == NOERR) {
             uint64_t wdate = util_iso2unix(*wdate_str);
 
             if (wdate == 0) {

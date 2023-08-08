@@ -14,6 +14,7 @@ struct cmd_entry {
     bool need_cache : 1; /* Does this cmd needs the file cache? */
     const char *arg_name; /* If this argument is present, execute this cmd */
     
+    enum error (*argcheck)(void); /* Function to check argument correctness before calling fn */
     enum error (*fn)(void *data); /* The function for the command */
 };
 
@@ -22,7 +23,7 @@ static const struct cmd_entry ents[] = {
     { .arg_name = "server-version", .fn = cmd_server_version, .need_api = true },
     { .arg_name = "uptime", .fn = cmd_server_uptime, .need_auth = true },
     { .arg_name = "ed2k", .fn = cmd_ed2k, },
-    { .arg_name = "add", .fn = cmd_add, .need_auth = true, .need_cache = true, },
+    { .arg_name = "add", .fn = cmd_add, .argcheck = cmd_add_argcheck, .need_auth = true, .need_cache = true, },
     { .arg_name = "modify", .fn = cmd_modify, .need_auth = true, .need_cache = false, },
 };
 static const int32_t ents_len = sizeof(ents)/sizeof(*ents);
@@ -31,6 +32,11 @@ static enum error cmd_run_one(const struct cmd_entry *ent)
 {
     enum error err = NOERR;
 
+    if (ent->argcheck) {
+        err = ent->argcheck();
+        if (err != NOERR)
+            goto end;
+    }
     if (ent->need_cache) {
         err = cache_init();
         if (err != NOERR)

@@ -175,3 +175,11 @@ enum error cmd_add(void *data)
     return err;
 }
 
+enum error cmd_add_argcheck()
+{
+    if (config_get_nonopt_count() == 0) {
+        uio_error("No files specified");
+        return ERR_CMD_ARG;
+    }
+    return NOERR;
+}

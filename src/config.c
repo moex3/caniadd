@@ -19,8 +19,10 @@
 #include "config.h"
 #include "error.h"
 #include "util.h"
+#include "uio.h"
 
 static int show_help(struct conf_entry *ce);
+static int show_subcomm_help(struct conf_entry *ce);
 static int config_parse_file();
 static enum error config_required_check();
 
@@ -35,35 +37,44 @@ static int config_set_bool(struct conf_entry *ce, char *arg);
 /* Everything not explicitly defined, is 0 */
 /* If an option only has a long name, the short name also has to be
  * defined. For example, a number larger than UCHAR_MAX */
+
+#define SUBCOMM_HELP { \
+        .l_name = "help", .s_name = 'h', .has_arg = no_argument, \
+        .action_func = show_subcomm_help, .in_args = true, \
+        .type = OTYPE_ACTION, .handle_order = 0, \
+        .h_desc = "Display the help for the subcommand and exit", }
+
+
+static struct conf_entry subcomm_def_help_opt = SUBCOMM_HELP;
+
+static struct conf_entry ed2k_subopts[] = {
+    SUBCOMM_HELP,
+
+    { .l_name = "link", .s_name = 'l', .has_arg = no_argument,
+      .set_func = config_set_bool, .in_args = true,
+      .type = OTYPE_B, .handle_order = 0, .value_is_set = true,
+      .h_desc = "Print an ed2k link for the files", },
+};
+
+static struct conf_entry modify_add_subopts[] = {
+    SUBCOMM_HELP,
+
+    { .l_name = "watched", .s_name = 'w', .has_arg = no_argument,
+      .set_func = config_set_bool, .in_args = true,
+      .type = OTYPE_B, .handle_order = 0, .value_is_set = true,
+      .h_desc = "Mark the episode as watched when adding files", },
+
+    { .l_name = "wdate", .s_name = UCHAR_MAX + 4, .has_arg = required_argument,
+      .set_func = config_set_str, .in_args = true, 
+      .type = OTYPE_S, .handle_order = 0,
+      .h_desc = "Set the watched date when adding files", },
+};
+
 static struct conf_entry options[] = {
     { .l_name = "help", .s_name = 'h', .has_arg = no_argument,
         .action_func = show_help, .in_args = true,
         .type = OTYPE_ACTION, .handle_order = 0,
         .h_desc = "Display the help and exit", },
-/*
-    { .l_name = "config-dir", .s_name = 'b', .has_arg = required_argument,
-        .default_func = config_def_config_dir, .set_func = config_set_str,
-        .in_args = true, .type = OTYPE_S, .handle_order = 0 },
-
-    { .l_name = "default-download-dir", .s_name = 'd', .has_arg = required_argument,
-        .default_func = config_def_default_download_dir, .set_func = config_set_str,
-        .in_file = true, .in_args = true, .type = OTYPE_S, .handle_order = 1 },
-
-    { .l_name = "port", .s_name = 'p', .has_arg = required_argument,
-        .set_func = config_set_port, .value.hu = 21729, .value_is_set = true,
-        .in_file = true, .in_args = true, .type = OTYPE_HU, .handle_order = 1 },
-
-    { .l_name = "foreground", .s_name = 'f', .has_arg = no_argument,
-        .set_func = config_set_bool, .value.b = false, .value_is_set = true,
-        .in_args = true, .type = OTYPE_B, .handle_order = 1 },
-
-    { .l_name = "write-config", .s_name = UCHAR_MAX + 1, .has_arg = no_argument,
-        .action_func = config_action_write_config, .value_is_set = true,
-        .in_args = true, .type = OTYPE_ACTION, .handle_order = 2 },
-
-    { .l_name = "peer-id", .s_name = UCHAR_MAX + 2, .has_arg = required_argument,
-        .default_func = config_def_peer_id, .type = OTYPE_S, .handle_order = 1 },
-        */
 
     { .l_name = "username", .s_name = 'u', .has_arg = required_argument,
       .set_func = config_set_str, .in_args = true, .in_file = true,
@@ -102,16 +113,6 @@ static struct conf_entry options[] = {
       .type = OTYPE_B, .handle_order = 1, .value_is_set = true,
       .h_desc = "not implemented", },
 
-    { .l_name = "watched", .s_name = 'w', .has_arg = no_argument,
-      .set_func = config_set_bool, .in_args = true,
-      .type = OTYPE_B, .handle_order = 1, .value_is_set = true,
-      .h_desc = "Mark the episode as watched when adding files", },
-
-    { .l_name = "link", .s_name = 'l', .has_arg = no_argument,
-      .set_func = config_set_bool, .in_args = true,
-      .type = OTYPE_B, .handle_order = 1, .value_is_set = true,
-      .h_desc = "Print an ed2k link when running the ed2k command", },
-
     { .l_name = "cachedb", .s_name = 'd', .has_arg = required_argument,
       .set_func = config_set_str, .in_args = true, .in_file = true,
       .type = OTYPE_S, .handle_order = 1, /*.default_func = config_def_cachedb*/
@@ -122,45 +123,50 @@ static struct conf_entry options[] = {
       .type = OTYPE_B, .handle_order = 1, .value_is_set = true,
       .h_desc = "Enable debug output", },
 
-    { .l_name = "wdate", .s_name = UCHAR_MAX + 4, .has_arg = required_argument,
-      .set_func = config_set_str, .in_args = true, 
-      .type = OTYPE_S, .handle_order = 1,
-      .h_desc = "Set the watched date when adding files", },
-
-    /*### cmd ###*/
+    /*### cmds ###*/
 
     { .l_name = "server-version", .s_name = UCHAR_MAX + 2,
       .has_arg = no_argument, .set_func = config_set_bool, .in_args = true,
-      .type = OTYPE_B, .handle_order = 1, .value_is_set = true,
-      .h_desc = "CMD: Request the server version", },
+      .type = OTYPE_SUBCOMMAND, .handle_order = 1, .value_is_set = true,
+      .h_desc = "Request the server version", 
+    },
 
     { .l_name = "version", .s_name = 'v',
       .has_arg = no_argument, .set_func = config_set_bool, .in_args = true,
-      .type = OTYPE_B, .handle_order = 1, .value_is_set = true,
-      .h_desc = "CMD: Print the caniadd version", },
+      .type = OTYPE_SUBCOMMAND, .handle_order = 1, .value_is_set = true,
+      .h_desc = "Print the caniadd version", },
 
     { .l_name = "uptime", .s_name = UCHAR_MAX + 3,
       .has_arg = no_argument, .set_func = config_set_bool, .in_args = true,
-      .type = OTYPE_B, .handle_order = 1, .value_is_set = true,
-      .h_desc = "CMD: Request the uptime of the api servers", },
+      .type = OTYPE_SUBCOMMAND, .handle_order = 1, .value_is_set = true,
+      .h_desc = "Request the uptime of the api servers", },
 
     { .l_name = "ed2k", .s_name = 'e',
       .has_arg = no_argument, .set_func = config_set_bool, .in_args = true,
-      .type = OTYPE_B, .handle_order = 1,
-      .h_desc = "CMD: Run an ed2k hash on the file arguments", },
+      .type = OTYPE_SUBCOMMAND, .handle_order = 1,
+      .h_desc = "Run an ed2k hash on the file arguments",
+      .subopts = ed2k_subopts,
+      .subopts_count = sizeof(ed2k_subopts) / sizeof(ed2k_subopts[0]),
+    },
 
     { .l_name = "add", .s_name = 'a',
       .has_arg = no_argument, .set_func = config_set_bool, .in_args = true,
-      .type = OTYPE_B, .handle_order = 1,
-      .h_desc = "CMD: Add files to your anidb list", },
+      .type = OTYPE_SUBCOMMAND, .handle_order = 1,
+      .h_desc = "Add files to your anidb list",
+      .subopts = modify_add_subopts,
+      .subopts_count = sizeof(modify_add_subopts) / sizeof(modify_add_subopts[0]),
+    },
 
     /* Arguments are either mylist id's, or file sizes and names
      *  in the format '[watch_date/]<size>/<filename>'. The filename can't contain
      *  '/' characters.  */
     { .l_name = "modify", .s_name = 'W',
       .has_arg = no_argument, .set_func = config_set_bool, .in_args = true,
-      .type = OTYPE_B, .handle_order = 1,
-      .h_desc = "CMD: Modify files in your anidb list", },
+      .type = OTYPE_SUBCOMMAND, .handle_order = 1,
+      .h_desc = "Modify files in your anidb list",
+      .subopts = modify_add_subopts,
+      .subopts_count = sizeof(modify_add_subopts) / sizeof(modify_add_subopts[0]),
+    },
 
     /*{ .l_name = "stats", .s_name = UCHAR_MAX + 5,
       .has_arg = no_argument, .set_func = config_set_bool, .in_args = true,
@@ -169,33 +175,42 @@ static struct conf_entry options[] = {
 };
 
 static const size_t options_count = sizeof(options) / sizeof(options[0]);
-static const char **opt_argv = NULL;
+/* Used in show_subcomm_help to output info about the subcommand */
+static struct conf_entry *current_subcommand = NULL;
+static char **opt_argv = NULL;
 static int opt_argc = 0;
 
-static void config_build_getopt_args(char out_sopt[options_count * 2 + 1],
-        struct option out_lopt[options_count + 1])
+static void config_build_getopt_args(int opts_count, const struct conf_entry opts[opts_count],
+        char out_sopt[opts_count * 2 + 1], struct option out_lopt[opts_count + 1],
+        bool stop_at_1st_nonopt)
 {
     int i_sopt = 0, i_lopt = 0;
+    if (stop_at_1st_nonopt) {
+        /* Tell getopts to stop at the 1st non-option argument */
+        out_sopt[i_sopt++] = '+';
+    }
 
-    for (int i = 0; i < options_count; i++) {
+    for (int i = 0; i < opts_count; i++) {
+        if (opts[i].type == OTYPE_SUBCOMMAND)
+            continue;
 
         /* Short options */
-        if (options[i].s_name && options[i].s_name <= UCHAR_MAX) {
-            out_sopt[i_sopt++] = options[i].s_name;
-            if (options[i].has_arg == required_argument)
+        if (opts[i].s_name && opts[i].s_name <= UCHAR_MAX) {
+            out_sopt[i_sopt++] = opts[i].s_name;
+            if (opts[i].has_arg == required_argument)
                 out_sopt[i_sopt++] = ':';
-            assert(options[i].has_arg == required_argument ||
-                    options[i].has_arg == no_argument);
+            assert(opts[i].has_arg == required_argument ||
+                    opts[i].has_arg == no_argument);
         }
 
-        /* Long options */
-        if (options[i].l_name) {
-            assert(options[i].s_name);
+        /* Long opts */
+        if (opts[i].l_name) {
+            assert(opts[i].s_name);
 
-            out_lopt[i_lopt].name = options[i].l_name;
-            out_lopt[i_lopt].has_arg = options[i].has_arg;
+            out_lopt[i_lopt].name = opts[i].l_name;
+            out_lopt[i_lopt].has_arg = opts[i].has_arg;
             out_lopt[i_lopt].flag = NULL;
-            out_lopt[i_lopt].val = options[i].s_name;
+            out_lopt[i_lopt].val = opts[i].s_name;
 
             i_lopt++;
         }
@@ -205,33 +220,36 @@ static void config_build_getopt_args(char out_sopt[options_count * 2 + 1],
     memset(&out_lopt[i_lopt], 0, sizeof(struct option));
 }
 
-static int config_read_args(int argc, char **argv, char sopt[options_count * 2 + 1],
-        struct option lopt[options_count + 1], int level)
+static int config_read_args(int argc, char **argv,
+        int opts_count, struct conf_entry opts[opts_count],
+        char sopt[opts_count * 2 + 1], struct option lopt[opts_count + 1], int level)
 {
     int optc, err = NOERR;
     optind = 1;
 
+    //uio_debug("Before %d %s", argc, argv[0]);
     while ((optc = getopt_long(argc, argv, sopt,
                     lopt, NULL)) >= 0) {
 
         bool handled = false;
+        //uio_debug("Optc: %c", optc);
 
-        for (int i = 0; i < options_count; i++) {
-            if (options[i].handle_order != level) {
+        for (int i = 0; i < opts_count; i++) {
+            if (opts[i].handle_order != level) {
                 /* Lie a lil :x */
                 handled = true;
                 continue;
             }
 
-            if (optc == options[i].s_name) {
-                if (options[i].type != OTYPE_ACTION)
-                    err = options[i].set_func(&options[i], optarg);
+            if (optc == opts[i].s_name) {
+                if (opts[i].type != OTYPE_ACTION)
+                    err = opts[i].set_func(&opts[i], optarg);
                 else
-                    err = options[i].action_func(&options[i]);
+                    err = opts[i].action_func(&opts[i]);
                 
                 if (err != NOERR)
                     goto end;
-                options[i].value_is_set = true;
+                opts[i].value_is_set = true;
 
                 handled = true;
                 break;
@@ -269,16 +287,72 @@ static enum error config_required_check()
     return err;
 }
 
+static enum error config_parse_subcomm_subopts(struct conf_entry *subcomm)
+{
+    char sopt[64];
+    struct option lopt[32];
+    enum error err;
+    
+    /* Set the global current subcommand pointer */
+    current_subcommand = subcomm;
+    config_build_getopt_args(subcomm->subopts_count, subcomm->subopts, sopt, lopt, false);
+
+    //uio_debug("Parsing subconn %s", subcomm->l_name);
+    //uio_debug("sopt: %s", sopt);
+
+    /* Update args for next parsing and nonopts parsing for later */
+    opt_argv = &opt_argv[optind];
+    opt_argc = config_get_nonopt_count();
+    /* argv[0] (which is the subcommand string) will be treated as the filename here, and skipped */
+    err = config_read_args(opt_argc, opt_argv,
+            subcomm->subopts_count, subcomm->subopts, sopt, lopt, 0);
+    if (err == NOERR) {
+        /* Mark subcommand as set */
+        subcomm->value_is_set = true;
+        subcomm->value.b = true;
+    }
+
+    current_subcommand = NULL;
+    return err;
+}
+
+static enum error config_parse_subcommands()
+{
+    const char *subcomm_str;
+    enum error err = ERR_OPT_NOTFOUND;
+
+    if (config_get_nonopt_count() <= 0) {
+        return ERR_OPT_NO_SUBCOMMAND;
+    }
+
+    subcomm_str = config_get_nonopt(0);
+    for (int i = 0; i < options_count; i++) {
+        if (options[i].type != OTYPE_SUBCOMMAND)
+            continue;
+        if (strcmp(options[i].l_name, subcomm_str) != 0)
+            continue;
+        if (options[i].subopts == NULL) {
+            /* If no suboptions is defined, define the default
+             * help one here */
+            options[i].subopts = &subcomm_def_help_opt;
+            options[i].subopts_count = 1;
+        }
+        /* Found, parse subopts */
+        err = config_parse_subcomm_subopts(&options[i]);
+    }
+    return err;
+}
+
 enum error config_parse(int argc, char **argv)
 {
     enum error err = NOERR;
     char sopt[options_count * 2 + 1];
     struct option lopt[options_count + 1];
-    opt_argv = (const char**)argv;
+    opt_argv = argv;
     opt_argc = argc;
-    config_build_getopt_args(sopt, lopt);
+    config_build_getopt_args(options_count, options, sopt, lopt, true);
 
-    err = config_read_args(argc, argv, sopt, lopt, 0);
+    err = config_read_args(argc, argv, options_count, options, sopt, lopt, 0);
     if (err != NOERR)
         goto end;
 
@@ -286,7 +360,7 @@ enum error config_parse(int argc, char **argv)
     if (err != NOERR)
         goto end;
 
-    err = config_read_args(argc, argv, sopt, lopt, 1);
+    err = config_read_args(argc, argv, options_count, options, sopt, lopt, 1);
     if (err != NOERR)
         goto end;
 
@@ -301,11 +375,24 @@ enum error config_parse(int argc, char **argv)
         }
     }
 
-    err = config_read_args(argc, argv, sopt, lopt, 2);
+    err = config_read_args(argc, argv, options_count, options, sopt, lopt, 2);
     if (err != NOERR)
         goto end;
     
     err = config_required_check();
+    if (err != NOERR)
+        goto end;
+
+    /* Now that all of the global arguments are parsed, do the subcommands */
+    err = config_parse_subcommands();
+    if (err != NOERR) {
+        if (err == ERR_OPT_NO_SUBCOMMAND)
+            printf("No subcommand given!\n\n");
+        else if (err == ERR_OPT_NOTFOUND)
+            printf("The given subcommand doesn't exist\n\n");
+        if (err != ERR_OPT_EXIT) /* If err is this, then help() was already called */
+            show_help(NULL);
+    }
 
 end:
     if (err != NOERR)
@@ -384,15 +471,63 @@ static int config_set_bool(struct conf_entry *ce, char *arg)
     return NOERR;
 }
 
+static int show_subcomm_help(struct conf_entry *ce)
+{
+    assert(current_subcommand);
+    const struct conf_entry *subopts = current_subcommand->subopts;
+
+    printf(
+            "Usage: caniadd [OPTIONS] %s [SUBCOMMAND_OPTIONS]\n"
+            "%s\n"
+            "\n"
+            "SUBCOMMAND_OPTIONS:\n",
+            current_subcommand->l_name,
+            current_subcommand->h_desc
+    );
+
+    for (size_t i = 0; i < current_subcommand->subopts_count; i++) {
+        int printed = 0, pad;
+
+        printed += printf("    ");
+
+        if (subopts[i].l_name)
+            printed += printf("--%s", subopts[i].l_name);
+        if (subopts[i].s_name < UCHAR_MAX)
+            printed += printf(", -%c", subopts[i].s_name);
+        if (subopts[i].has_arg != no_argument)
+            printed += printf(" arg");
+
+        pad = 25 - printed;
+        if (pad <= 0)
+            pad = 1;
+
+        printf("%*s%s", pad, "", subopts[i].h_desc);
+        if (subopts[i].value_is_set) {
+            printf(" Val: ");
+            if (subopts[i].type == OTYPE_S)
+                printed += printf("%s", subopts[i].value.s);
+            else if (subopts[i].type == OTYPE_HU)
+                printed += printf("%hu", subopts[i].value.hu);
+            else if (subopts[i].type == OTYPE_B)
+                printed += printf("%s", subopts[i].value.b ? "true" : "false");
+        }
+        printf("\n");
+    }
+    return ERR_OPT_EXIT;
+}
+
 static int show_help(struct conf_entry *ce)
 {
     printf(
-            "Usage: caniadd [OPTION]...\n"
+            "Usage: caniadd [OPTIONS] SUBCOMMAND [SUBCOMMAND_OPTIONS]\n"
             "Caniadd will add files to an AniDB list, and possibly more.\n"
             "\n"
             "OPTIONS:\n"
     );
     for (size_t i = 0; i < options_count; i++) {
+        if (options[i].type == OTYPE_SUBCOMMAND)
+            continue;
+
         int printed = 0, pad;
 
         printed += printf("    ");
@@ -410,7 +545,7 @@ static int show_help(struct conf_entry *ce)
 
         printf("%*s%s", pad, "", options[i].h_desc);
         if (options[i].value_is_set) {
-            printf(" Def: ");
+            printf(" Val: ");
             if (options[i].type == OTYPE_S)
                 printed += printf("%s", options[i].value.s);
             else if (options[i].type == OTYPE_HU)
@@ -419,6 +554,19 @@ static int show_help(struct conf_entry *ce)
                 printed += printf("%s", options[i].value.b ? "true" : "false");
         }
         printf("\n");
+    }
+
+    printf("\nSUBCOMMANDS:\n");
+    for (size_t i = 0; i < options_count; i++) {
+        if (options[i].type != OTYPE_SUBCOMMAND)
+            continue;
+
+        int printed = 0, pad;
+
+        printed += printf("    %s", options[i].l_name);
+
+        pad = 25 - printed;
+        printf("%*s%s\n", pad, "", options[i].h_desc);
     }
     return ERR_OPT_EXIT;
 }
@@ -537,17 +685,18 @@ end:
 }
 #endif
 
-enum error config_get(const char *key, void **out)
+enum error config_get_inter(int cenf_count, const struct conf_entry cenf[cenf_count],
+        const char *key, void **out)
 {
     enum error err = ERR_OPT_NOTFOUND;
 
-    for (int i = 0; i < options_count; i++) {
-        struct conf_entry *cc = &options[i];
+    for (int i = 0; i < cenf_count; i++) {
+        const struct conf_entry *cc = &cenf[i];
 
         if (strcmp(cc->l_name, key) == 0) {
             if (cc->value_is_set) {
                 if (out)
-                    *out = &cc->value.s;
+                    *out = (void**)&cc->value.s;
                 err = NOERR;
             } else {
                 err = ERR_OPT_UNSET;
@@ -557,6 +706,23 @@ enum error config_get(const char *key, void **out)
     }
 
     return err;
+}
+
+enum error config_get(const char *key, void **out)
+{
+    return config_get_inter(options_count, options, key, out);
+}
+
+enum error config_get_subopt(const char *subcomm, const char *key, void **out)
+{
+    for (int i = 0; i < options_count; i++) {
+        struct conf_entry *cc = &options[i];
+
+        if (strcmp(cc->l_name, subcomm) == 0) {
+            return config_get_inter(cc->subopts_count, cc->subopts, key, out);
+        }
+    }
+    return ERR_OPT_NOTFOUND;
 }
 
 const char *config_get_nonopt(int index)

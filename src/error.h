@@ -13,6 +13,7 @@
     E(ERR_OPT_EXIT) /* We should exit in main, if config_parse returns this */ \
     E(ERR_OPT_UNSET) /* In config_get, if the value isn't set */ \
     E(ERR_OPT_NOTFOUND) /* In config_get, if the options is not found */ \
+    E(ERR_OPT_NO_SUBCOMMAND) \
 \
     E(ERR_NET_APIADDR) /* If there are problems with the api servers address */ \
     E(ERR_NET_SOCKET) /* If there are problems with the udp socket */ \

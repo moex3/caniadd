@@ -49,7 +49,7 @@ enum error cmd_ed2k(void *data)
         return ERR_CMD_ARG;
     }
 
-    if (config_get("link", (void**)&link) == NOERR)
+    if (config_get_subopt("ed2k", "link", (void**)&link) == NOERR)
         opts.link = *link;
 
     for (int i = 0; i < fcount; i++) {

@@ -13,6 +13,7 @@ enum error cmd_main();
  * Add files to the AniDB list
  */
 enum error cmd_add(void *);
+enum error cmd_add_argcheck();
 
 /*
  * Take in a file/folder and print out
