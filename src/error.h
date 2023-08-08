@@ -25,8 +25,7 @@
     E(ERR_CMD_NONE) /* No command was run */ \
     E(ERR_CMD_ARG) /* Some problem with the command arguments */ \
 \
-    E(ERR_ED2KUTIL_FS) /* Some filesystem problem */ \
-    E(ERR_ED2KUTIL_UNSUP) /* Operation or file type is unsupported */ \
+    E(ERR_ITERPATH) /* Couldn't start iterating over the given path */ \
     E(ED2KUTIL_DONTHASH) /* Skip the hashing part. pre_hash_fn can return this */ \
 \
     E(ERR_API_ENCRYPTFAIL) /* Cannot start encryption with the api */ \

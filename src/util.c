@@ -1,9 +1,15 @@
-#define _XOPEN_SOURCE
+#define _XOPEN_SOURCE 500
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <assert.h>
+#include <errno.h>
+#include <sys/stat.h>
+#include <ftw.h>
 
 #include "util.h"
+#include "error.h"
+#include "uio.h"
 
 void util_byte2hex(const uint8_t* bytes, size_t bytes_len,
         bool uppercase, char* out)
@@ -85,4 +91,63 @@ uint64_t util_iso2unix(const char *isotime)
         return 0;
 
     return mktime(&tm);
+}
+
+/* nftw doesn't support passing in user data to the callback function :/ */
+static util_itercb global_iterpath_cb = NULL;
+static void *global_iterpath_data = NULL;
+
+static int util_iterpath_walk(const char *fpath, const struct stat *sb,
+        int typeflag, struct FTW *ftwbuf)
+{
+    if (typeflag == FTW_DNR) {
+        uio_error("Cannot read directory '%s'. Skipping", fpath);
+        return NOERR;
+    }
+    if (typeflag == FTW_D)
+        return NOERR;
+    if (typeflag != FTW_F) {
+        uio_error("Unhandled error '%d'", typeflag);
+        return ERR_ITERPATH;
+    }
+
+    return global_iterpath_cb(fpath, sb, global_iterpath_data);
+}
+
+enum error util_iterpath(const char *path, util_itercb cb, void *data)
+{
+    assert(global_iterpath_cb == NULL);
+    enum error ret = ERR_ITERPATH;
+    struct stat ts;
+
+    if (stat(path, &ts) != 0) {
+        uio_error("Stat failed for path: '%s' (%s)",
+                path, strerror(errno));
+        goto error;
+    }
+
+    if (S_ISREG(ts.st_mode)) {
+        /* If the path is a regular file, call the cb once */
+        ret = cb(path, &ts, data);
+        goto end;
+    } else if (S_ISDIR(ts.st_mode)) {
+        global_iterpath_cb = cb;
+        global_iterpath_data = data;
+
+        /* If a directory, walk over it */
+        ret = nftw(path, util_iterpath_walk, 20, 0);
+        if (ret == -1) {
+            uio_error("nftw failure");
+            goto error;
+        }
+        goto end;
+    }
+
+    uio_error("Unsupported file type: %d", ts.st_mode & S_IFMT);
+end:
+    global_iterpath_cb = global_iterpath_data = NULL;
+    return ret;
+error:
+    ret = ERR_ITERPATH;
+    goto end;
 }

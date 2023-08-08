@@ -1,8 +1,12 @@
 #ifndef _UTIL_H
 #define _UTIL_H
+#include <sys/stat.h>
+#include <time.h>
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
+
+#include "error.h"
 
 #define MS_TO_TIMESPEC(ts, ms) { \
     ts->tv_sec = ms / 1000; \
@@ -49,5 +53,14 @@ uint64_t util_timespec_diff(const struct timespec *past,
  * Returns 0 on error
  */
 uint64_t util_iso2unix(const char *isotime);
+
+/*
+ * Iterate over a given path and call the 'cb' function for each file
+ * If 'cb' returns anything other than NOERR, the iteration will stop and
+ *  that error will be returned.
+ * !! THIS FUNCTION IS NOT THREAD SAFE !!
+ */
+typedef enum error (*util_itercb)(const char *path, const struct stat *fstat, void *data);
+enum error util_iterpath(const char *path, util_itercb cb, void *data);
 
 #endif /* _UTIL_H */

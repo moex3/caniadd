@@ -53,9 +53,8 @@ enum error cmd_ed2k(void *data)
         opts.link = *link;
 
     for (int i = 0; i < fcount; i++) {
-        err = ed2k_util_iterpath(config_get_nonopt(i), &ed2k_opts);
-        if (err != NOERR)
-            break;
+        ed2k_util_iterpath(config_get_nonopt(i), &ed2k_opts);
+        /* Above may fail if the path doesn't exists or smth, but still continue */
     }
     return err;
 }
