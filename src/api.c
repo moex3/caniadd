@@ -484,27 +484,34 @@ static enum error api_ratelimit()
 
 /*
  * Returns the written byte count
- * Or -1 on error, and -2 if errno was EINTR
+ * Or negative errno value on error
  */
 static ssize_t api_send(char *buffer, size_t data_len, size_t buf_size)
 {
+    pthread_mutex_lock(&api_work_mx);
+
     ssize_t read_len;
     int en;
 
-    if (api_ratelimit() == ERR_SHOULD_EXIT)
-        return -2;
+    if (api_ratelimit() == ERR_SHOULD_EXIT) {
+        read_len = -2;
+        goto end;
+    }
     uio_debug("{Api}: Sending: %.*s", (int)data_len, buffer);
     if (api_encryption)
         data_len = api_encrypt(buffer, data_len);
 
     en = net_send(buffer, data_len);
-    if (en < 0)
-        return en;
+    if (en < 0) {
+        read_len = en;
+        goto end;
+    }
 
     read_len = net_read(buffer, buf_size);
     if (read_len < 0) {
-        uio_error("!!! BAD PLACE EINTR !!!        report pls");
-        return read_len; /* This could lead so some problems if we also want to
+        if (read_len == -EINTR)
+            uio_error("!!! BAD PLACE EINTR !!!        report pls");
+        goto end;        /* This could lead so some problems if we also want to
                             log out. If we hit this, the msg got sent, but we
                             couldn't read the response. That means, in the
                             logout call, this msg's data will be read
@@ -516,6 +523,8 @@ static ssize_t api_send(char *buffer, size_t data_len, size_t buf_size)
         read_len = api_decrypt(buffer, read_len);
     uio_debug("{Api}: Reading: %.*s", (int)read_len, buffer);
 
+end:
+    pthread_mutex_unlock(&api_work_mx);
     return read_len;
 }
 
@@ -686,7 +695,6 @@ static enum error api_cmd_base_pref(char buffer[API_BUFSIZE], int send_len,
     enum error err = NOERR;
     int retry_count = 0;
 
-    pthread_mutex_lock(&api_work_mx);
     api_g_retry_count = 0;
 
     while (retry_count < API_MAX_TRYAGAIN &&
@@ -701,7 +709,7 @@ static enum error api_cmd_base_pref(char buffer[API_BUFSIZE], int send_len,
         res_len = api_send(buffer, send_len, API_BUFSIZE);
 
         if (res_len < 0) {
-            if (res_len == -2 && should_exit)
+            if (res_len == -EINTR && should_exit)
                 err = ERR_SHOULD_EXIT;
             else
                 err = ERR_API_COMMFAIL;
@@ -742,10 +750,24 @@ static enum error api_cmd_base_pref(char buffer[API_BUFSIZE], int send_len,
         }
 
         if (err == ERR_API_NOLOGIN || err == ERR_API_INV_SESSION) {
+            if (api_authed == false) {
+                /* If this happens and we are not logged in, don't retry */
+                err = ERR_API_COMMFAIL;
+                break;
+            }
             api_g_retry_count++;
             if (api_g_retry_count < API_MAX_TRYAGAIN) {
-                uio_debug("Let's try loggin in agane");
+                struct timespec ts;
+                MS_TO_TIMESPEC_L(ts, 30000);
+
+                uio_debug("Let's try loggin in agane after waiting some");
                 api_authed = false; /* We got logged out probably */
+                if (nanosleep(&ts, NULL) == -1) {
+                    if (errno == EINTR && should_exit) {
+                        err = ERR_SHOULD_EXIT;
+                        goto end;
+                    }
+                }
                 err = api_auth(); /* -> will call this function */
                 if (api_g_retry_count < API_MAX_TRYAGAIN) {
                     memcpy(buffer, l_buff, send_len);
@@ -764,7 +786,6 @@ static enum error api_cmd_base_pref(char buffer[API_BUFSIZE], int send_len,
     }
 
 end:
-    pthread_mutex_unlock(&api_work_mx);
     return err;
 }
 static enum error api_cmd_base(char buffer[API_BUFSIZE], struct api_result *res,
@@ -1020,6 +1041,67 @@ enum error api_cmd_mylistmod(uint64_t lid, struct api_mylistadd_opts *opts,
     err = api_cmd_base_pref(buffer, send_len, res);
 
     return err;
+}
+
+static enum error api_cmd_myliststats_resp_parse(const char *buffer, struct api_myliststats_result *stats)
+{
+    /* all int
+     *
+     * {animes}|{eps}|{files}|{size of files}|{added animes}|{added eps}|
+     * {added files}|{added groups}|{leech %}|{glory %}|{viewed % of db}|
+     * {mylist % of db}|{viewed % of mylist}|{number of viewed eps}|
+     * {votes}|{reviews}|{viewed length in minutes}
+     */
+
+    bool glr;
+    char *line;
+    size_t line_len;
+    int fc;
+
+    glr = api_get_line(buffer, 2, &line, &line_len);
+    if (!glr)
+        return ERR_API_RESP_INVALID;
+    fc = api_field_parse(line,
+            "%lu", &stats->animes,
+            "%lu", &stats->eps,
+            "%lu", &stats->files,
+            "%lu", &stats->size_of_files,
+            "%lu", &stats->added_animes,
+            "%lu", &stats->added_eps,
+            "%lu", &stats->added_files,
+            "%lu", &stats->added_groups,
+            "%lu", &stats->leech_prcnt,
+            "%lu", &stats->glory_prcnt,
+            "%lu", &stats->viewed_prcnt_of_db,
+            "%lu", &stats->mylist_prcnt_of_db,
+            "%lu", &stats->viewed_prcnt_of_mylist,
+            "%lu", &stats->num_of_viewed_eps,
+            "%lu", &stats->votes,
+            "%lu", &stats->reviews,
+            "%lu", &stats->viewed_minutes,
+            NULL);
+    if (fc != 17) {
+        uio_error("Scanf only parsed %d", fc);
+        return ERR_API_RESP_INVALID;
+    }
+
+    return NOERR;
+}
+
+enum error api_cmd_myliststats(struct api_result *res)
+{
+    char buffer[API_BUFSIZE];
+    enum error err = NOERR;
+
+    err = api_cmd_base(buffer, res, "MYLISTSTATS s=%s", api_session);
+    //err = api_cmd_base(buffer, res, "MYLISTSTATS");
+    if (err != NOERR)
+        return err;
+
+    if (res->code == APICODE_MYLIST_STATS)
+        return api_cmd_myliststats_resp_parse(buffer, &res->myliststats);
+    else
+        return ERR_API_RESP_INVALID;
 }
 
 #pragma GCC diagnostic pop

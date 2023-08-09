@@ -2,6 +2,7 @@
 #define _API_H
 #include <stdint.h>
 #include <time.h>
+#include <stdbool.h>
 
 #include "error.h"
 
@@ -243,6 +244,15 @@ struct api_mylistadd_result {
 struct api_mylistmod_result {
     uint32_t n_edits;
 };
+/* The largest struct probably lul 136 bytes */
+struct api_myliststats_result {
+    uint64_t animes, eps, files, size_of_files;
+    uint64_t added_animes, added_eps, added_files;
+    uint64_t added_groups, leech_prcnt, glory_prcnt;
+    uint64_t viewed_prcnt_of_db, mylist_prcnt_of_db;
+    uint64_t viewed_prcnt_of_mylist, num_of_viewed_eps;
+    uint64_t votes, reviews, viewed_minutes;
+};
 
 #define e(n) struct api_##n##_result n
 struct api_result {
@@ -255,6 +265,7 @@ struct api_result {
         e(mylistadd);
         e(encrypt);
         e(mylistmod);
+        e(myliststats);
     };
 };
 #undef e
@@ -269,5 +280,6 @@ enum error api_cmd_mylistadd(int64_t size, const uint8_t *hash,
         struct api_mylistadd_opts *opts, struct api_result *res);
 enum error api_cmd_mylistmod(uint64_t lid, struct api_mylistadd_opts *opts,
         struct api_result *res);
+enum error api_cmd_myliststats(struct api_result *res);
 
 #endif /* _API_H */

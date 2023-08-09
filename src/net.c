@@ -265,9 +265,7 @@ ssize_t net_read(void* out_data, size_t read_size)
         int en = errno;
 
         uio_error("{net} Read failed: %s", strerror(errno));
-        if (en == EINTR)
-            return -2;
-        return -1;
+        return -en;
     }
     if (read == read_size)
         uio_warning("{net} Data may have been discarded!");

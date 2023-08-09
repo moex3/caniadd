@@ -171,6 +171,12 @@ static struct conf_entry options[] = {
       .subopts_count = sizeof(modify_add_subopts) / sizeof(modify_add_subopts[0]),
     },
 
+    { .l_name = "stats", .s_name = UCHAR_MAX + 10,
+      .has_arg = no_argument, .set_func = config_set_bool, .in_args = true,
+      .type = OTYPE_SUBCOMMAND, .handle_order = 1,
+      .h_desc = "Get the mylist status",
+    },
+
     /*{ .l_name = "stats", .s_name = UCHAR_MAX + 5,
       .has_arg = no_argument, .set_func = config_set_bool, .in_args = true,
       .type = OTYPE_B, .handle_order = 1, .value_is_set = true },*/

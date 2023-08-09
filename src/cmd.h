@@ -42,4 +42,9 @@ enum error cmd_prog_version(void *);
 enum error cmd_modify(void *data);
 enum error cmd_modify_argcheck();
 
+/*
+ * Request the mylist stats
+ */
+enum error cmd_stats(void *data);
+
 #endif /* _CMD_H */
